@@ -1,0 +1,10 @@
+{
+  "name": "New App",
+  "description": "",
+  "owner": "anonymous",
+  "team": "apps",
+  "created_at": "2026-04-03",
+  "visibility": ["default"],
+  "default_stack": "python+htmx",
+  "tags": []
+}
