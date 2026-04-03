@@ -1,0 +1,37 @@
+{% if creds %}
+  {% for cred in creds %}
+  <div class="cred-row">
+    <div class="cred-info">
+      <div class="cred-name">{{ cred.display_name }}</div>
+      {% if cred.description %}
+      <div class="cred-desc">{{ cred.description }}</div>
+      {% else %}
+      <div class="cred-desc" style="font-family:monospace;">{{ cred.name }}</div>
+      {% endif %}
+    </div>
+    <div class="cred-keys">
+      {% for key in cred.keys %}
+      <span class="key-chip">{{ key }}</span>
+      {% endfor %}
+    </div>
+    <div class="cred-actions">
+      <button
+        class="btn btn-secondary btn-sm"
+        hx-get="/creds/{{ cred.name }}/edit"
+        hx-target="#drawer-content"
+        hx-swap="innerHTML"
+        hx-on::after-request="openDrawer()"
+      >Edit</button>
+      <button
+        class="btn btn-danger btn-sm"
+        hx-delete="/creds/{{ cred.name }}"
+        hx-target="#cred-list"
+        hx-swap="innerHTML"
+        hx-confirm="Delete &quot;{{ cred.display_name }}&quot;? This cannot be undone."
+      >Delete</button>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="empty-state">No credentials yet. Click <strong>+ New credential</strong> to add one.</div>
+{% endif %}
