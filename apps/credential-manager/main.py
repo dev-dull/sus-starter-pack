@@ -3,14 +3,15 @@ import os
 import re
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Form, Request, Response
+import httpx
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from kubernetes import client, config
-from kubernetes.client.exceptions import ApiException
 
-LABEL_SELECTOR = "managed-by=sus-credential-manager"
-MANAGED_BY_LABEL = "sus-credential-manager"
+SUS_API = os.environ.get("SUS_API_URL", "http://sus-landing.sus.svc.cluster.local")
+INDEX_SECRET = "cred-mgr-index"
+META_DN_PREFIX = "_dn_"
+META_DS_PREFIX = "_ds_"
 
 
 def get_namespace() -> str:
@@ -21,56 +22,115 @@ def get_namespace() -> str:
         return os.environ.get("CREDENTIAL_NAMESPACE", "default")
 
 
-def get_k8s_client():
-    try:
-        config.load_incluster_config()
-    except config.ConfigException:
-        config.load_kube_config()
-    return client.CoreV1Api()
-
-
 def slugify(name: str) -> str:
     slug = name.lower().strip()
     slug = re.sub(r"[^a-z0-9]+", "-", slug)
     return slug.strip("-")[:63]
 
 
+def b64key(s: str) -> str:
+    """Base64url-encode a string, no padding — safe for k8s secret key names."""
+    return base64.urlsafe_b64encode(s.encode()).decode().rstrip("=")
+
+
+def b64decode(s: str) -> str:
+    pad = 4 - len(s) % 4
+    if pad != 4:
+        s += "=" * pad
+    return base64.urlsafe_b64decode(s).decode()
+
+
+def dn_key(display_name: str) -> str:
+    return META_DN_PREFIX + b64key(display_name)
+
+
+def ds_key(description: str) -> str:
+    return META_DS_PREFIX + b64key(description)
+
+
+def parse_keys(keys: list[str]) -> tuple[str, str, list[str]]:
+    """Split key list into (display_name, description, data_keys)."""
+    display_name = description = ""
+    data_keys = []
+    for k in keys:
+        if k.startswith(META_DN_PREFIX):
+            try:
+                display_name = b64decode(k[len(META_DN_PREFIX):])
+            except Exception:
+                pass
+        elif k.startswith(META_DS_PREFIX):
+            try:
+                description = b64decode(k[len(META_DS_PREFIX):])
+            except Exception:
+                pass
+        else:
+            data_keys.append(k)
+    return display_name, description, data_keys
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.namespace = get_namespace()
-    app.state.k8s = get_k8s_client()
+    app.state.http = httpx.AsyncClient(base_url=SUS_API, timeout=10.0)
     yield
+    await app.state.http.aclose()
 
 
 app = FastAPI(lifespan=lifespan)
 templates = Jinja2Templates(directory="templates")
 
 
-def list_credentials(k8s: client.CoreV1Api, namespace: str) -> list[dict]:
-    secrets = k8s.list_namespaced_secret(
-        namespace, label_selector=LABEL_SELECTOR
-    )
+async def list_credentials(http: httpx.AsyncClient) -> list[dict]:
+    resp = await http.get(f"/api/secrets/{INDEX_SECRET}")
+    if resp.status_code != 200:
+        return []
+
+    cred_names = [k for k in resp.json().get("keys", []) if k != "__v1__"]
+
     creds = []
-    for s in secrets.items:
-        keys = list(s.data.keys()) if s.data else []
-        creds.append(
-            {
-                "name": s.metadata.name,
-                "display_name": s.metadata.annotations.get(
-                    "sus.dev/display-name", s.metadata.name
-                ),
-                "description": s.metadata.annotations.get("sus.dev/description", ""),
-                "keys": keys,
-                "key_count": len(keys),
-            }
-        )
+    for name in cred_names:
+        r = await http.get(f"/api/secrets/{name}")
+        if r.status_code != 200:
+            continue
+        display_name, description, data_keys = parse_keys(r.json().get("keys", []))
+        creds.append({
+            "name": name,
+            "display_name": display_name or name,
+            "description": description,
+            "keys": data_keys,
+            "key_count": len(data_keys),
+        })
+
     creds.sort(key=lambda c: c["display_name"])
     return creds
 
 
+async def index_add(http: httpx.AsyncClient, secret_name: str) -> None:
+    resp = await http.get(f"/api/secrets/{INDEX_SECRET}")
+    if resp.status_code == 404:
+        await http.post("/api/secrets", json={
+            "name": INDEX_SECRET,
+            "data": {"__v1__": "1", secret_name: "1"},
+        })
+    else:
+        existing = {k: "1" for k in resp.json().get("keys", [])}
+        existing[secret_name] = "1"
+        existing.setdefault("__v1__", "1")
+        await http.put(f"/api/secrets/{INDEX_SECRET}", json={"data": existing})
+
+
+async def index_remove(http: httpx.AsyncClient, secret_name: str) -> None:
+    resp = await http.get(f"/api/secrets/{INDEX_SECRET}")
+    if resp.status_code != 200:
+        return
+    updated = {k: "1" for k in resp.json().get("keys", []) if k != secret_name}
+    updated.setdefault("__v1__", "1")
+    await http.put(f"/api/secrets/{INDEX_SECRET}", json={"data": updated})
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    creds = list_credentials(request.app.state.k8s, request.app.state.namespace)
+    creds = await list_credentials(request.app.state.http)
     return templates.TemplateResponse(
         "index.html",
         {"request": request, "creds": creds, "namespace": request.app.state.namespace},
@@ -81,43 +141,28 @@ async def index(request: Request):
 async def new_form(request: Request):
     return templates.TemplateResponse(
         "partials/edit_form.html",
-        {
-            "request": request,
-            "secret_name": "new",
-            "display_name": "",
-            "description": "",
-            "data": {},
-        },
+        {"request": request, "secret_name": "new", "display_name": "", "description": "", "data": {}},
     )
 
 
 @app.get("/creds/{secret_name}/edit", response_class=HTMLResponse)
 async def edit_form(request: Request, secret_name: str):
-    k8s = request.app.state.k8s
-    ns = request.app.state.namespace
-    try:
-        secret = k8s.read_namespaced_secret(secret_name, ns)
-    except ApiException as e:
-        if e.status == 404:
-            return HTMLResponse("<p>Credential not found.</p>", status_code=404)
-        raise
+    resp = await request.app.state.http.get(f"/api/secrets/{secret_name}")
+    if resp.status_code == 404:
+        return HTMLResponse("<p>Credential not found.</p>", status_code=404)
+    if resp.status_code != 200:
+        return HTMLResponse("<p>Error loading credential.</p>", status_code=500)
 
-    data = {}
-    if secret.data:
-        for k, v in secret.data.items():
-            data[k] = base64.b64decode(v).decode()
-
-    display_name = secret.metadata.annotations.get(
-        "sus.dev/display-name", secret_name
-    )
-    description = secret.metadata.annotations.get("sus.dev/description", "")
+    display_name, description, data_keys = parse_keys(resp.json().get("keys", []))
+    # Values are write-only; show key names with empty value fields
+    data = {k: "" for k in data_keys}
 
     return templates.TemplateResponse(
         "partials/edit_form.html",
         {
             "request": request,
             "secret_name": secret_name,
-            "display_name": display_name,
+            "display_name": display_name or secret_name,
             "description": description,
             "data": data,
         },
@@ -132,47 +177,30 @@ async def create_credential(
     keys: list[str] = Form(...),
     values: list[str] = Form(...),
 ):
-    k8s = request.app.state.k8s
+    http = request.app.state.http
     ns = request.app.state.namespace
     secret_name = slugify(display_name)
 
-    encoded = {
-        k: base64.b64encode(v.encode()).decode()
-        for k, v in zip(keys, values)
-        if k.strip()
-    }
+    data = {k: v for k, v in zip(keys, values) if k.strip()}
+    data[dn_key(display_name)] = "1"
+    if description:
+        data[ds_key(description)] = "1"
 
-    body = client.V1Secret(
-        metadata=client.V1ObjectMeta(
-            name=secret_name,
-            namespace=ns,
-            labels={"managed-by": MANAGED_BY_LABEL},
-            annotations={
-                "sus.dev/display-name": display_name,
-                "sus.dev/description": description,
-            },
-        ),
-        data=encoded,
-    )
+    resp = await http.post("/api/secrets", json={"name": secret_name, "data": data})
 
-    try:
-        k8s.create_namespaced_secret(ns, body)
-    except ApiException as e:
-        if e.status == 409:
-            error = f"A credential named &ldquo;{secret_name}&rdquo; already exists."
-            creds = list_credentials(k8s, ns)
-            return templates.TemplateResponse(
-                "index.html",
-                {"request": request, "creds": creds, "namespace": ns, "error": error},
-                status_code=409,
-            )
-        raise
+    if resp.status_code != 200 or resp.json().get("status") != "created":
+        error = f'Could not create credential &ldquo;{secret_name}&rdquo; — it may already exist.'
+        creds = await list_credentials(http)
+        return templates.TemplateResponse(
+            "index.html",
+            {"request": request, "creds": creds, "namespace": ns, "error": error},
+            status_code=409,
+        )
 
-    creds = list_credentials(k8s, ns)
-    response = templates.TemplateResponse(
-        "partials/cred_list.html",
-        {"request": request, "creds": creds},
-    )
+    await index_add(http, secret_name)
+
+    creds = await list_credentials(http)
+    response = templates.TemplateResponse("partials/cred_list.html", {"request": request, "creds": creds})
     response.headers["HX-Trigger"] = "credSaved"
     return response
 
@@ -186,49 +214,31 @@ async def update_credential(
     keys: list[str] = Form(...),
     values: list[str] = Form(...),
 ):
-    k8s = request.app.state.k8s
-    ns = request.app.state.namespace
+    http = request.app.state.http
 
-    encoded = {
-        k: base64.b64encode(v.encode()).decode()
-        for k, v in zip(keys, values)
-        if k.strip()
-    }
+    check = await http.get(f"/api/secrets/{secret_name}")
+    if check.status_code == 404:
+        return HTMLResponse("<p>Credential not found.</p>", status_code=404)
 
-    try:
-        secret = k8s.read_namespaced_secret(secret_name, ns)
-        secret.data = encoded
-        secret.metadata.annotations["sus.dev/display-name"] = display_name
-        secret.metadata.annotations["sus.dev/description"] = description
-        k8s.replace_namespaced_secret(secret_name, ns, secret)
-    except ApiException as e:
-        if e.status == 404:
-            return HTMLResponse("<p>Credential not found.</p>", status_code=404)
-        raise
+    data = {k: v for k, v in zip(keys, values) if k.strip() and v.strip()}
+    data[dn_key(display_name)] = "1"
+    if description:
+        data[ds_key(description)] = "1"
 
-    creds = list_credentials(k8s, ns)
-    response = templates.TemplateResponse(
-        "partials/cred_list.html",
-        {"request": request, "creds": creds},
-    )
+    resp = await http.put(f"/api/secrets/{secret_name}", json={"data": data})
+    if resp.status_code != 200:
+        return HTMLResponse("<p>Failed to update credential.</p>", status_code=500)
+
+    creds = await list_credentials(http)
+    response = templates.TemplateResponse("partials/cred_list.html", {"request": request, "creds": creds})
     response.headers["HX-Trigger"] = "credSaved"
     return response
 
 
 @app.delete("/creds/{secret_name}", response_class=HTMLResponse)
 async def delete_credential(request: Request, secret_name: str):
-    k8s = request.app.state.k8s
-    ns = request.app.state.namespace
-    try:
-        k8s.delete_namespaced_secret(secret_name, ns)
-    except ApiException as e:
-        if e.status == 404:
-            pass  # already gone, still refresh list
-        else:
-            raise
-
-    creds = list_credentials(k8s, ns)
-    return templates.TemplateResponse(
-        "partials/cred_list.html",
-        {"request": request, "creds": creds},
-    )
+    http = request.app.state.http
+    await http.delete(f"/api/secrets/{secret_name}")
+    await index_remove(http, secret_name)
+    creds = await list_credentials(http)
+    return templates.TemplateResponse("partials/cred_list.html", {"request": request, "creds": creds})

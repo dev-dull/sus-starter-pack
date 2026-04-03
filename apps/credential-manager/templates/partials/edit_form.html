@@ -42,6 +42,9 @@
 
     <div class="form-group">
       <label>Keys & values</label>
+      {% if not is_new %}
+      <p style="font-size:0.78rem;color:#8e8e93;margin-bottom:0.4rem;">Values are write-only and cannot be retrieved. Enter new values for any keys you want to update; leave blank to remove that key.</p>
+      {% endif %}
       <div class="kv-rows" id="kv-rows">
         {% if data %}
           {% for key, value in data.items() %}
