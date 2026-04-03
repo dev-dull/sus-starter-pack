@@ -77,6 +77,20 @@ async def index(request: Request):
     )
 
 
+@app.get("/creds/new/edit", response_class=HTMLResponse)
+async def new_form(request: Request):
+    return templates.TemplateResponse(
+        "partials/edit_form.html",
+        {
+            "request": request,
+            "secret_name": "new",
+            "display_name": "",
+            "description": "",
+            "data": {},
+        },
+    )
+
+
 @app.get("/creds/{secret_name}/edit", response_class=HTMLResponse)
 async def edit_form(request: Request, secret_name: str):
     k8s = request.app.state.k8s

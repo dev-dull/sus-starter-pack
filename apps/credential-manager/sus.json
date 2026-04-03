@@ -1,6 +1,6 @@
 {
-  "name": "New App",
-  "description": "",
+  "name": "Credential Manager",
+  "description": "Manage Kubernetes Secrets for SUS apps — create, update, and delete credentials that other apps can consume as environment variables.",
   "owner": "anonymous",
   "team": "apps",
   "created_at": "2026-04-03",

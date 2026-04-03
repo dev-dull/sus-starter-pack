@@ -1,0 +1,23 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: credential-manager
+  namespace: sus-workloads
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: credential-manager
+  namespace: sus-workloads
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: sus-workloads
+roleRef:
+  kind: Role
+  name: credential-manager
+  apiGroup: rbac.authorization.k8s.io
