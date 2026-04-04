@@ -147,8 +147,8 @@ async def index(request: Request):
 @app.post("/", response_class=HTMLResponse)
 async def handle_action(
     request: Request,
-    _action: str = Form(...),
-    _name: str = Form(""),
+    action: str = Form(..., alias="action"),
+    secret_name: str = Form("", alias="secret_name"),
     display_name: str = Form(""),
     description: str = Form(""),
     keys: list[str] = Form(default=[]),
@@ -156,28 +156,28 @@ async def handle_action(
 ):
     http = request.app.state.http
 
-    if _action == "delete":
-        await http.delete(f"/api/secrets/{_name}")
-        await index_remove(http, _name)
+    if action == "delete":
+        await http.delete(f"/api/secrets/{secret_name}")
+        await index_remove(http, secret_name)
         return await render_index(request)
 
-    if _action == "create":
-        secret_name = slugify(display_name)
+    if action == "create":
+        name = slugify(display_name)
         data = {k: v for k, v in zip(keys, values) if k.strip()}
         data[dn_key(display_name)] = "1"
         if description:
             data[ds_key(description)] = "1"
 
-        resp = await http.post("/api/secrets", json={"name": secret_name, "data": data})
+        resp = await http.post("/api/secrets", json={"name": name, "data": data})
         if resp.status_code != 200 or resp.json().get("status") != "created":
-            error = f'Could not create credential \u201c{secret_name}\u201d \u2014 it may already exist.'
+            error = f'Could not create credential \u201c{name}\u201d \u2014 it may already exist.'
             return await render_index(request, error=error)
 
-        await index_add(http, secret_name)
+        await index_add(http, name)
         return await render_index(request)
 
-    if _action == "update":
-        check = await http.get(f"/api/secrets/{_name}")
+    if action == "update":
+        check = await http.get(f"/api/secrets/{secret_name}")
         if check.status_code == 404:
             return await render_index(request, error="Credential not found.")
 
@@ -186,7 +186,7 @@ async def handle_action(
         if description:
             data[ds_key(description)] = "1"
 
-        resp = await http.put(f"/api/secrets/{_name}", json={"data": data})
+        resp = await http.put(f"/api/secrets/{secret_name}", json={"data": data})
         if resp.status_code != 200:
             return await render_index(request, error="Failed to update credential.")
         return await render_index(request)

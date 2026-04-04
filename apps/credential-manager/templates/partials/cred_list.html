@@ -21,8 +21,8 @@
       >Edit</button>
       <form method="post" action="." style="display:inline;"
         onsubmit="return confirm('Delete \u201c{{ cred.display_name }}\u201d? This cannot be undone.')">
-        <input type="hidden" name="_action" value="delete">
-        <input type="hidden" name="_name" value="{{ cred.name }}">
+        <input type="hidden" name="action" value="delete">
+        <input type="hidden" name="secret_name" value="{{ cred.name }}">
         <button type="submit" class="btn btn-danger btn-sm">Delete</button>
       </form>
     </div>
