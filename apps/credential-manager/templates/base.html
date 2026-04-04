@@ -238,6 +238,8 @@
       openDrawer();
     });
 
+    console.log('[debug] page URL:', window.location.href);
+
     // Debug: log all htmx events on body
     ['htmx:beforeRequest', 'htmx:afterRequest', 'htmx:beforeSwap', 'htmx:afterSwap', 'htmx:responseError', 'htmx:sendError', 'openDrawer'].forEach(function(name) {
       document.body.addEventListener(name, function(evt) {
