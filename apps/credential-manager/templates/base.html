@@ -315,6 +315,49 @@
       }
       openDrawer();
     }
+
+    document.getElementById('cred-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const form = e.target;
+      const saveBtn = form.querySelector('button[type="submit"]');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+      try {
+        const resp = await fetch('http://localhost:3000/', {
+          method: 'POST',
+          body: new URLSearchParams(new FormData(form)),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          closeDrawerForce();
+          window.location.reload();
+        } else {
+          alert(data.error || 'Something went wrong.');
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save';
+        }
+      } catch (err) {
+        alert('Request failed: ' + err.message);
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+      }
+    });
+
+    document.body.addEventListener('submit', async function(e) {
+      if (!e.target.classList.contains('delete-form')) return;
+      e.preventDefault();
+      const form = e.target;
+      const resp = await fetch('http://localhost:3000/', {
+        method: 'POST',
+        body: new URLSearchParams(new FormData(form)),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        window.location.reload();
+      } else {
+        alert(data.error || 'Delete failed.');
+      }
+    });
   </script>
 </body>
 </html>
