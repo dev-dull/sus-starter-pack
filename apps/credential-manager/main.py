@@ -157,8 +157,10 @@ async def index(
         return await render_index(request)
 
     if action == "create":
+        display_name = display_name.strip()
+        description = description.strip()
         name = slugify(display_name)
-        data = {k: v for k, v in zip(keys, values) if k.strip()}
+        data = {k.strip(): v for k, v in zip(keys, values) if k.strip()}
         data[dn_key(display_name)] = "1"
         if description:
             data[ds_key(description)] = "1"
@@ -176,10 +178,13 @@ async def index(
         if check.status_code == 404:
             return await render_index(request, error="Credential not found.")
 
+        display_name = display_name.strip()
+        description = description.strip()
         existing_data = check.json().get("data", {})
         data = {}
         for k, v in zip(keys, values):
-            if not k.strip():
+            k = k.strip()
+            if not k:
                 continue
             if v.strip():
                 data[k] = v  # new or updated value
