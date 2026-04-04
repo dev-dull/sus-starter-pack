@@ -233,13 +233,28 @@
       row.querySelector('input').focus();
     }
 
-    // Prepend the proxy base path so HTMX requests reach the app
-    document.body.addEventListener('htmx:configRequest', function(evt) {
-      var base = window.location.pathname.replace(/\/+$/, '');
-      if (base) evt.detail.path = base + evt.detail.path;
-    });
-
     document.body.addEventListener('openDrawer', openDrawer);
+
+    // === DEBUGGING ===
+    window.addEventListener('load', function() {
+      console.log('[debug] HTMX available:', typeof htmx !== 'undefined', window.htmx && htmx.version);
+      console.log('[debug] page URL:', window.location.href);
+      var btn = document.querySelector('[hx-get]');
+      console.log('[debug] first hx-get element:', btn ? btn.tagName + ' hx-get=' + btn.getAttribute('hx-get') : 'NOT FOUND');
+    });
+    ['htmx:beforeRequest','htmx:afterRequest','htmx:responseError','htmx:sendError','htmx:beforeSwap'].forEach(function(e) {
+      document.body.addEventListener(e, function(evt) {
+        var path = evt.detail.pathInfo ? evt.detail.pathInfo.requestPath : (evt.detail.path || '?');
+        console.log('[htmx]', e, path, evt.detail.failed ? 'FAILED' : '');
+      });
+    });
+    document.body.addEventListener('click', function(e) {
+      if (e.target.closest('[hx-get],[hx-post],[hx-put],[hx-delete]')) {
+        var el = e.target.closest('[hx-get],[hx-post],[hx-put],[hx-delete]');
+        console.log('[debug] click on htmx element:', el.tagName, Object.values(el.attributes).filter(a=>a.name.startsWith('hx-')).map(a=>a.name+'='+a.value).join(' '));
+      }
+    });
+    // === END DEBUGGING ===
 
     // Show toast on credSaved event
     document.body.addEventListener('credSaved', () => {
