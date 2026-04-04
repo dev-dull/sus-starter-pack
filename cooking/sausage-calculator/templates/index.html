@@ -227,7 +227,7 @@
   <nav class="recipe-nav">
     {% for r_id in recipe_order %}
     {% set r = all_recipes[r_id] %}
-    <a href="/?recipe={{ r_id }}"
+    <a href="?recipe={{ r_id }}"
        class="tab-link{% if r_id == recipe_id %} active{% endif %}">
       {{ r.name }}
     </a>
