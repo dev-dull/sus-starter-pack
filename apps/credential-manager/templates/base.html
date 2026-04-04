@@ -289,7 +289,7 @@
       if (!confirm('Delete \u201c' + displayName + '\u201d? This cannot be undone.')) return;
       var params = new URLSearchParams({ action: 'delete', secret_name: name });
       if (_podIp) params.set('pod_ip', _podIp);
-      window.location.href = '/?' + params.toString();
+      window.location.href = '?' + params.toString();
     }
 
     function openNewDrawer() {
