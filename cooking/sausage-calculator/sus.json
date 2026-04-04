@@ -1,10 +1,10 @@
 {
-  "name": "New App",
-  "description": "",
+  "name": "Sausage Calculator",
+  "description": "Calculate ingredient amounts for cured meat recipes. Change any one ingredient and everything else scales automatically.",
   "owner": "anonymous",
   "team": "cooking",
   "created_at": "2026-04-04",
   "visibility": ["default"],
   "default_stack": "python+htmx",
-  "tags": []
+  "tags": ["cooking", "recipes", "calculator"]
 }
