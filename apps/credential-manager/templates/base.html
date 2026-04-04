@@ -233,9 +233,16 @@
       row.querySelector('input').focus();
     }
 
-    // Open drawer after its content has been swapped in
-    document.body.addEventListener('htmx:afterSwap', function(evt) {
-      if (evt.detail.target.id === 'drawer-content') openDrawer();
+    document.body.addEventListener('openDrawer', function() {
+      console.log('[drawer] openDrawer event received, calling openDrawer()');
+      openDrawer();
+    });
+
+    // Debug: log all htmx events on body
+    ['htmx:beforeRequest', 'htmx:afterRequest', 'htmx:beforeSwap', 'htmx:afterSwap', 'htmx:responseError', 'htmx:sendError', 'openDrawer'].forEach(function(name) {
+      document.body.addEventListener(name, function(evt) {
+        console.log('[htmx]', name, evt.detail);
+      });
     });
 
     // Show toast on credSaved event

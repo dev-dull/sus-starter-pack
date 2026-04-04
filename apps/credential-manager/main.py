@@ -139,10 +139,12 @@ async def index(request: Request):
 
 @app.get("/creds/new/edit", response_class=HTMLResponse)
 async def new_form(request: Request):
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "partials/edit_form.html",
         {"request": request, "secret_name": "new", "display_name": "", "description": "", "data": {}},
     )
+    response.headers["HX-Trigger"] = "openDrawer"
+    return response
 
 
 @app.get("/creds/{secret_name}/edit", response_class=HTMLResponse)
@@ -157,7 +159,7 @@ async def edit_form(request: Request, secret_name: str):
     # Values are write-only; show key names with empty value fields
     data = {k: "" for k in data_keys}
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "partials/edit_form.html",
         {
             "request": request,
@@ -167,6 +169,8 @@ async def edit_form(request: Request, secret_name: str):
             "data": data,
         },
     )
+    response.headers["HX-Trigger"] = "openDrawer"
+    return response
 
 
 @app.post("/creds", response_class=HTMLResponse)
