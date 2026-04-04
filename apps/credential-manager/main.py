@@ -2,10 +2,9 @@ import base64
 import os
 import re
 from contextlib import asynccontextmanager
-from typing import Optional
 
 import httpx
-from fastapi import FastAPI, Form, Query, Request
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
@@ -30,7 +29,6 @@ def slugify(name: str) -> str:
 
 
 def b64key(s: str) -> str:
-    """Base64url-encode a string, no padding — safe for k8s secret key names."""
     return base64.urlsafe_b64encode(s.encode()).decode().rstrip("=")
 
 
@@ -50,7 +48,6 @@ def ds_key(description: str) -> str:
 
 
 def parse_keys(keys: list[str]) -> tuple[str, str, list[str]]:
-    """Split key list into (display_name, description, data_keys)."""
     display_name = description = ""
     data_keys = []
     for k in keys:
@@ -129,120 +126,69 @@ async def index_remove(http: httpx.AsyncClient, secret_name: str) -> None:
     await http.put(f"/api/secrets/{INDEX_SECRET}", json={"data": updated})
 
 
-# All routes use GET/POST/PUT/DELETE on "/" so the proxy can forward them.
-# Sub-path routes (e.g. /creds/new/edit) are intercepted by the platform proxy
-# and never reach this app.
-
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request, _drawer: Optional[str] = Query(default=None)):
-    # ?_drawer=new  → new credential form
-    # ?_drawer=NAME → edit form for existing credential
-    # (no param)    → main page
-    if _drawer == "new":
-        response = templates.TemplateResponse(
-            "partials/edit_form.html",
-            {"request": request, "secret_name": "new", "display_name": "", "description": "", "data": {}},
-        )
-        response.headers["HX-Trigger"] = "openDrawer"
-        return response
-
-    if _drawer is not None:
-        resp = await request.app.state.http.get(f"/api/secrets/{_drawer}")
-        if resp.status_code == 404:
-            return HTMLResponse("<p>Credential not found.</p>", status_code=404)
-        if resp.status_code != 200:
-            return HTMLResponse("<p>Error loading credential.</p>", status_code=500)
-        display_name, description, data_keys = parse_keys(resp.json().get("keys", []))
-        response = templates.TemplateResponse(
-            "partials/edit_form.html",
-            {
-                "request": request,
-                "secret_name": _drawer,
-                "display_name": display_name or _drawer,
-                "description": description,
-                "data": {k: "" for k in data_keys},
-            },
-        )
-        response.headers["HX-Trigger"] = "openDrawer"
-        return response
-
+async def render_index(request: Request, error: str = "") -> HTMLResponse:
     creds = await list_credentials(request.app.state.http)
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "creds": creds, "namespace": request.app.state.namespace},
+        {
+            "request": request,
+            "creds": creds,
+            "namespace": request.app.state.namespace,
+            "error": error,
+        },
     )
 
 
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    return await render_index(request)
+
+
 @app.post("/", response_class=HTMLResponse)
-async def create_credential(
+async def handle_action(
     request: Request,
-    display_name: str = Form(...),
+    _action: str = Form(...),
+    _name: str = Form(""),
+    display_name: str = Form(""),
     description: str = Form(""),
-    keys: list[str] = Form(...),
-    values: list[str] = Form(...),
-):
-    http = request.app.state.http
-    ns = request.app.state.namespace
-    secret_name = slugify(display_name)
-
-    data = {k: v for k, v in zip(keys, values) if k.strip()}
-    data[dn_key(display_name)] = "1"
-    if description:
-        data[ds_key(description)] = "1"
-
-    resp = await http.post("/api/secrets", json={"name": secret_name, "data": data})
-
-    if resp.status_code != 200 or resp.json().get("status") != "created":
-        error = f'Could not create credential &ldquo;{secret_name}&rdquo; — it may already exist.'
-        creds = await list_credentials(http)
-        return templates.TemplateResponse(
-            "index.html",
-            {"request": request, "creds": creds, "namespace": ns, "error": error},
-            status_code=409,
-        )
-
-    await index_add(http, secret_name)
-
-    creds = await list_credentials(http)
-    response = templates.TemplateResponse("partials/cred_list.html", {"request": request, "creds": creds})
-    response.headers["HX-Trigger"] = "credSaved"
-    return response
-
-
-@app.put("/", response_class=HTMLResponse)
-async def update_credential(
-    request: Request,
-    _name: str = Query(...),
-    display_name: str = Form(...),
-    description: str = Form(""),
-    keys: list[str] = Form(...),
-    values: list[str] = Form(...),
+    keys: list[str] = Form(default=[]),
+    values: list[str] = Form(default=[]),
 ):
     http = request.app.state.http
 
-    check = await http.get(f"/api/secrets/{_name}")
-    if check.status_code == 404:
-        return HTMLResponse("<p>Credential not found.</p>", status_code=404)
+    if _action == "delete":
+        await http.delete(f"/api/secrets/{_name}")
+        await index_remove(http, _name)
+        return await render_index(request)
 
-    data = {k: v for k, v in zip(keys, values) if k.strip() and v.strip()}
-    data[dn_key(display_name)] = "1"
-    if description:
-        data[ds_key(description)] = "1"
+    if _action == "create":
+        secret_name = slugify(display_name)
+        data = {k: v for k, v in zip(keys, values) if k.strip()}
+        data[dn_key(display_name)] = "1"
+        if description:
+            data[ds_key(description)] = "1"
 
-    resp = await http.put(f"/api/secrets/{_name}", json={"data": data})
-    if resp.status_code != 200:
-        return HTMLResponse("<p>Failed to update credential.</p>", status_code=500)
+        resp = await http.post("/api/secrets", json={"name": secret_name, "data": data})
+        if resp.status_code != 200 or resp.json().get("status") != "created":
+            error = f'Could not create credential \u201c{secret_name}\u201d \u2014 it may already exist.'
+            return await render_index(request, error=error)
 
-    creds = await list_credentials(http)
-    response = templates.TemplateResponse("partials/cred_list.html", {"request": request, "creds": creds})
-    response.headers["HX-Trigger"] = "credSaved"
-    return response
+        await index_add(http, secret_name)
+        return await render_index(request)
 
+    if _action == "update":
+        check = await http.get(f"/api/secrets/{_name}")
+        if check.status_code == 404:
+            return await render_index(request, error="Credential not found.")
 
-@app.delete("/", response_class=HTMLResponse)
-async def delete_credential(request: Request, _name: str = Query(...)):
-    http = request.app.state.http
-    await http.delete(f"/api/secrets/{_name}")
-    await index_remove(http, _name)
-    creds = await list_credentials(http)
-    return templates.TemplateResponse("partials/cred_list.html", {"request": request, "creds": creds})
+        data = {k: v for k, v in zip(keys, values) if k.strip() and v.strip()}
+        data[dn_key(display_name)] = "1"
+        if description:
+            data[ds_key(description)] = "1"
+
+        resp = await http.put(f"/api/secrets/{_name}", json={"data": data})
+        if resp.status_code != 200:
+            return await render_index(request, error="Failed to update credential.")
+        return await render_index(request)
+
+    return await render_index(request)
