@@ -233,6 +233,11 @@
       row.querySelector('input').focus();
     }
 
+    // Open drawer after its content has been swapped in
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+      if (evt.detail.target.id === 'drawer-content') openDrawer();
+    });
+
     // Show toast on credSaved event
     document.body.addEventListener('credSaved', () => {
       closeDrawerForce();
