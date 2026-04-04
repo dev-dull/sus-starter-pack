@@ -6,9 +6,9 @@
 
 <form
   {% if is_new %}
-    hx-post="creds"
+    hx-post="."
   {% else %}
-    hx-put="creds/{{ secret_name }}"
+    hx-put="?_name={{ secret_name }}"
   {% endif %}
   hx-target="#cred-list"
   hx-swap="innerHTML"
