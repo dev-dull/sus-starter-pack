@@ -128,6 +128,16 @@ async def index_remove(http: httpx.AsyncClient, secret_name: str) -> None:
     await http.put(f"/api/secrets/{INDEX_SECRET}", json={"data": updated})
 
 
+@app.get("/_debug")
+async def debug(request: Request):
+    from fastapi.responses import JSONResponse
+    return JSONResponse({
+        "root_path": request.scope.get("root_path", ""),
+        "headers": dict(request.headers),
+        "url": str(request.url),
+    })
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     creds = await list_credentials(request.app.state.http)
