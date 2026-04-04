@@ -233,8 +233,6 @@
       row.querySelector('input').focus();
     }
 
-    document.body.addEventListener('openDrawer', openDrawer);
-
     // === DEBUGGING ===
     window.addEventListener('load', function() {
       console.log('[debug] HTMX available:', typeof htmx !== 'undefined', window.htmx && htmx.version);
@@ -242,11 +240,20 @@
       var btn = document.querySelector('[hx-get]');
       console.log('[debug] first hx-get element:', btn ? btn.tagName + ' hx-get=' + btn.getAttribute('hx-get') : 'NOT FOUND');
     });
-    ['htmx:beforeRequest','htmx:afterRequest','htmx:responseError','htmx:sendError','htmx:beforeSwap'].forEach(function(e) {
+    ['htmx:beforeRequest','htmx:afterRequest','htmx:responseError','htmx:sendError'].forEach(function(e) {
       document.body.addEventListener(e, function(evt) {
         var path = evt.detail.pathInfo ? evt.detail.pathInfo.requestPath : (evt.detail.path || '?');
-        console.log('[htmx]', e, path, evt.detail.failed ? 'FAILED' : '');
+        console.log('[htmx]', e, path, evt.detail.failed ? 'FAILED' : 'OK');
       });
+    });
+    document.body.addEventListener('htmx:beforeSwap', function(evt) {
+      console.log('[htmx] htmx:beforeSwap shouldSwap=' + evt.detail.shouldSwap + ' status=' + evt.detail.xhr.status);
+      console.log('[htmx] response preview:', evt.detail.serverResponse && evt.detail.serverResponse.substring(0, 120));
+      console.log('[htmx] HX-Trigger header:', evt.detail.xhr.getResponseHeader('HX-Trigger'));
+    });
+    document.body.addEventListener('openDrawer', function() {
+      console.log('[debug] openDrawer event fired!');
+      openDrawer();
     });
     document.body.addEventListener('click', function(e) {
       if (e.target.closest('[hx-get],[hx-post],[hx-put],[hx-delete]')) {
