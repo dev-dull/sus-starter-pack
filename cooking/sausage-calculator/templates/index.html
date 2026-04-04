@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sausage Calculator</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
+  <style>
+    :root {
+      --bg:           #f6f1e9;
+      --surface:      #fffefb;
+      --accent:       #8b3a2a;
+      --accent-hover: #a8442f;
+      --accent-pale:  #f4ece8;
+      --text:         #2c1f0e;
+      --text-muted:   #7a6650;
+      --border:       #ddd0be;
+      --row-alt:      #faf7f2;
+      --focus-ring:   rgba(139,58,42,0.18);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Georgia, "Times New Roman", serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2.5rem 1rem 4rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.75rem;
+    }
+
+    /* ── Header ── */
+    .site-header { text-align: center; }
+    .site-header h1 {
+      font-size: 2rem;
+      color: var(--accent);
+      letter-spacing: -0.02em;
+    }
+    .site-header p {
+      color: var(--text-muted);
+      font-style: italic;
+      margin-top: 0.35rem;
+      font-size: 0.95rem;
+    }
+
+    /* ── Recipe tabs ── */
+    .recipe-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: center;
+    }
+    .tab-link {
+      padding: 0.4rem 0.9rem;
+      border-radius: 20px;
+      text-decoration: none;
+      font-family: system-ui, sans-serif;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      transition: color 0.12s, border-color 0.12s, background 0.12s;
+      white-space: nowrap;
+    }
+    .tab-link:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: var(--accent-pale);
+    }
+    .tab-link.active {
+      color: #fff;
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* ── Card ── */
+    .card {
+      width: 100%;
+      max-width: 600px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.75rem;
+      box-shadow: 0 3px 12px rgba(44,31,14,0.08);
+    }
+
+    .recipe-meta { margin-bottom: 1.4rem; }
+    .recipe-meta h2 {
+      font-size: 1.3rem;
+      color: var(--accent);
+    }
+    .recipe-meta p {
+      color: var(--text-muted);
+      font-style: italic;
+      font-size: 0.88rem;
+      margin-top: 0.2rem;
+    }
+
+    /* ── Table ── */
+    .ingredients-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.93rem;
+    }
+
+    .ingredients-table thead th {
+      font-family: system-ui, sans-serif;
+      font-size: 0.73rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-muted);
+      padding: 0.45rem 0.7rem;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .ingredients-table tbody tr:nth-child(even) { background: var(--row-alt); }
+    .ingredients-table tbody tr:hover { background: var(--accent-pale); }
+
+    .ingredients-table td {
+      padding: 0.55rem 0.7rem;
+      vertical-align: middle;
+    }
+
+    .col-name  { width: 44%; }
+    .col-amount {
+      width: 34%;
+      text-align: right;
+    }
+    .col-pct {
+      width: 22%;
+      text-align: right;
+      font-family: system-ui, sans-serif;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    /* ── Input ── */
+    .input-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      justify-content: flex-end;
+    }
+
+    .input-wrap input[type=number] {
+      width: 88px;
+      padding: 0.32rem 0.5rem;
+      border: 1.5px solid var(--border);
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text);
+      font-family: "Courier New", Courier, monospace;
+      font-size: 0.93rem;
+      text-align: right;
+      transition: border-color 0.13s, box-shadow 0.13s, background 0.13s;
+      -moz-appearance: textfield;
+    }
+    .input-wrap input[type=number]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--focus-ring);
+      background: var(--surface);
+    }
+    .input-wrap input::-webkit-outer-spin-button,
+    .input-wrap input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+    }
+
+    .unit {
+      font-family: system-ui, sans-serif;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      width: 1.2rem;
+    }
+
+    /* ── Tfoot total ── */
+    .ingredients-table tfoot td {
+      border-top: 2px solid var(--border);
+      padding: 0.6rem 0.7rem;
+      font-family: system-ui, sans-serif;
+      font-weight: 700;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+    .total-row .col-amount {
+      font-family: "Courier New", monospace;
+      color: var(--text);
+    }
+
+    /* ── HTMX settle flash ── */
+    .htmx-settling .ingredients-table tbody tr {
+      animation: row-flash 0.4s ease-out;
+    }
+    @keyframes row-flash {
+      from { background-color: #fde8d8; }
+      to   { background-color: transparent; }
+    }
+
+    /* ── Footer ── */
+    .site-footer {
+      font-family: system-ui, sans-serif;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-align: center;
+      max-width: 480px;
+    }
+
+    @media (max-width: 480px) {
+      .card { padding: 1.2rem; }
+      .input-wrap input[type=number] { width: 76px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="site-header">
+    <h1>Sausage Calculator</h1>
+    <p>Change any ingredient — everything else scales to match</p>
+  </header>
+
+  <nav class="recipe-nav">
+    {% for r_id in recipe_order %}
+    {% set r = all_recipes[r_id] %}
+    <a href="/?recipe={{ r_id }}"
+       class="tab-link{% if r_id == recipe_id %} active{% endif %}">
+      {{ r.name }}
+    </a>
+    {% endfor %}
+  </nav>
+
+  <main class="card">
+    <div class="recipe-meta">
+      <h2>{{ recipe.name }}</h2>
+      <p>{{ recipe.description }}</p>
+    </div>
+    <div id="ingredients-wrapper">
+      {% include '_table.html' %}
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    Eco Cure #1 is a nitrite curing salt — use precise measurements and follow safe handling guidelines.
+  </footer>
+
+</body>
+</html>
