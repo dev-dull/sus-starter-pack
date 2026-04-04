@@ -131,10 +131,12 @@
     .drawer {
       background: #fff;
       width: 480px;
+      max-width: 100vw;
       height: 100vh;
       overflow-y: auto;
       box-shadow: -4px 0 24px rgba(0,0,0,0.12);
       padding: 1.5rem;
+      box-sizing: border-box;
       display: flex;
       flex-direction: column;
       gap: 1.25rem;
@@ -159,8 +161,8 @@
     .form-group textarea { resize: vertical; min-height: 60px; }
 
     .kv-rows { display: flex; flex-direction: column; gap: 0.5rem; }
-    .kv-row { display: flex; gap: 0.5rem; align-items: center; }
-    .kv-row input { flex: 1; }
+    .kv-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .kv-row input { flex: 1; min-width: 80px; }
     .kv-row input[name="keys"] { font-family: monospace; font-size: 0.8rem; }
     .kv-row input[name="values"] { font-family: monospace; font-size: 0.8rem; }
     .remove-kv { background: none; border: none; cursor: pointer; color: #c0392b; font-size: 1.1rem; padding: 0 0.25rem; }
