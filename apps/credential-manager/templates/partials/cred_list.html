@@ -17,11 +17,11 @@
     <div class="cred-actions">
       <button
         class="btn btn-secondary btn-sm"
-        onclick="openEditDrawer({{ cred.name | tojson | e }}, {{ cred.display_name | tojson | e }}, {{ cred.description | tojson | e }}, {{ cred['keys'] | tojson | e }})"
+        onclick="openEditDrawer({{ cred.name | tojson | forceescape }}, {{ cred.display_name | tojson | forceescape }}, {{ cred.description | tojson | forceescape }}, {{ cred['keys'] | tojson | forceescape }})"
       >Edit</button>
       <button
         class="btn btn-danger btn-sm"
-        onclick="deleteCred('{{ cred.name }}', {{ cred.display_name | tojson | e }})"
+        onclick="deleteCred('{{ cred.name }}', {{ cred.display_name | tojson | forceescape }})"
       >Delete</button>
     </div>
   </div>
