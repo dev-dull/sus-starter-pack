@@ -17,7 +17,7 @@
     <div class="cred-actions">
       <button
         class="btn btn-secondary btn-sm"
-        onclick="openEditDrawer({{ cred.name | tojson }}, {{ cred.display_name | tojson }}, {{ cred.description | tojson }}, {{ cred.keys | tojson }})"
+        onclick="openEditDrawer({{ cred.name | tojson }}, {{ cred.display_name | tojson }}, {{ cred.description | tojson }}, {{ cred['keys'] | tojson }})"
       >Edit</button>
       <button
         class="btn btn-danger btn-sm"
