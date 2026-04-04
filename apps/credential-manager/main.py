@@ -4,9 +4,8 @@ import re
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Form, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 SUS_API = os.environ.get("SUS_API_URL", "http://sus-landing.sus.svc.cluster.local")
@@ -76,7 +75,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["POST"], allow_headers=["*"])
 templates = Jinja2Templates(directory="templates")
 
 
@@ -142,26 +140,21 @@ async def render_index(request: Request, error: str = "") -> HTMLResponse:
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    return await render_index(request)
-
-
-@app.post("/", response_class=JSONResponse)
-async def handle_action(
+async def index(
     request: Request,
-    action: str = Form(..., alias="action"),
-    secret_name: str = Form("", alias="secret_name"),
-    display_name: str = Form(""),
-    description: str = Form(""),
-    keys: list[str] = Form(default=[]),
-    values: list[str] = Form(default=[]),
+    action: str = Query(None),
+    secret_name: str = Query(""),
+    display_name: str = Query(""),
+    description: str = Query(""),
+    keys: list[str] = Query(default=[]),
+    values: list[str] = Query(default=[]),
 ):
     http = request.app.state.http
 
     if action == "delete":
         await http.delete(f"/api/secrets/{secret_name}")
         await index_remove(http, secret_name)
-        return JSONResponse({"ok": True})
+        return await render_index(request)
 
     if action == "create":
         name = slugify(display_name)
@@ -173,15 +166,15 @@ async def handle_action(
         resp = await http.post("/api/secrets", json={"name": name, "data": data})
         if resp.status_code != 200 or resp.json().get("status") != "created":
             error = f'Could not create credential \u201c{name}\u201d \u2014 it may already exist.'
-            return JSONResponse({"ok": False, "error": error}, status_code=400)
+            return await render_index(request, error=error)
 
         await index_add(http, name)
-        return JSONResponse({"ok": True})
+        return await render_index(request)
 
     if action == "update":
         check = await http.get(f"/api/secrets/{secret_name}")
         if check.status_code == 404:
-            return JSONResponse({"ok": False, "error": "Credential not found."}, status_code=404)
+            return await render_index(request, error="Credential not found.")
 
         data = {k: v for k, v in zip(keys, values) if k.strip() and v.strip()}
         data[dn_key(display_name)] = "1"
@@ -190,7 +183,7 @@ async def handle_action(
 
         resp = await http.put(f"/api/secrets/{secret_name}", json={"data": data})
         if resp.status_code != 200:
-            return JSONResponse({"ok": False, "error": "Failed to update credential."}, status_code=500)
-        return JSONResponse({"ok": True})
+            return await render_index(request, error="Failed to update credential.")
+        return await render_index(request)
 
-    return JSONResponse({"ok": False, "error": "Unknown action."}, status_code=400)
+    return await render_index(request)

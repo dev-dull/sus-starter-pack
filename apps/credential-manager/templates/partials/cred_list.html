@@ -19,12 +19,10 @@
         class="btn btn-secondary btn-sm"
         onclick="openEditDrawer({{ cred.name | tojson }}, {{ cred.display_name | tojson }}, {{ cred.description | tojson }}, {{ cred.keys | tojson }})"
       >Edit</button>
-      <form method="post" action="" class="delete-form" style="display:inline;"
-        onsubmit="return confirm('Delete \u201c{{ cred.display_name }}\u201d? This cannot be undone.')">
-        <input type="hidden" name="action" value="delete">
-        <input type="hidden" name="secret_name" value="{{ cred.name }}">
-        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-      </form>
+      <button
+        class="btn btn-danger btn-sm"
+        onclick="deleteCred('{{ cred.name }}', {{ cred.display_name | tojson }})"
+      >Delete</button>
     </div>
   </div>
   {% endfor %}

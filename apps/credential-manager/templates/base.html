@@ -210,9 +210,10 @@
         <button class="close-btn" onclick="closeDrawerForce()">×</button>
       </div>
 
-      <form action="" method="post" id="cred-form">
+      <form action="" method="get" id="cred-form">
         <input type="hidden" name="action" id="form-action" value="create">
         <input type="hidden" name="secret_name" id="form-name" value="">
+        <input type="hidden" name="pod_ip" id="form-pod-ip" value="">
         <div style="display:flex;flex-direction:column;gap:1rem;">
 
           <div class="form-group">
@@ -282,10 +283,20 @@
       if (key === undefined) row.querySelector('input').focus();
     }
 
+    var _podIp = new URLSearchParams(window.location.search).get('pod_ip') || '';
+
+    function deleteCred(name, displayName) {
+      if (!confirm('Delete \u201c' + displayName + '\u201d? This cannot be undone.')) return;
+      var params = new URLSearchParams({ action: 'delete', secret_name: name });
+      if (_podIp) params.set('pod_ip', _podIp);
+      window.location.href = '/?' + params.toString();
+    }
+
     function openNewDrawer() {
       document.getElementById('drawer-title').textContent = 'New credential';
       document.getElementById('form-action').value = 'create';
       document.getElementById('form-name').value = '';
+      document.getElementById('form-pod-ip').value = _podIp;
       document.getElementById('display_name').value = '';
       document.getElementById('description').value = '';
       document.getElementById('edit-hint').style.display = 'none';
@@ -301,6 +312,7 @@
       document.getElementById('drawer-title').textContent = 'Edit credential';
       document.getElementById('form-action').value = 'update';
       document.getElementById('form-name').value = name;
+      document.getElementById('form-pod-ip').value = _podIp;
       document.getElementById('display_name').value = displayName;
       document.getElementById('description').value = description || '';
       document.getElementById('edit-hint').style.display = '';
@@ -315,49 +327,6 @@
       }
       openDrawer();
     }
-
-    document.getElementById('cred-form').addEventListener('submit', async function(e) {
-      e.preventDefault();
-      const form = e.target;
-      const saveBtn = form.querySelector('button[type="submit"]');
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Saving…';
-      try {
-        const resp = await fetch('http://localhost:3000/', {
-          method: 'POST',
-          body: new URLSearchParams(new FormData(form)),
-        });
-        const data = await resp.json();
-        if (data.ok) {
-          closeDrawerForce();
-          window.location.reload();
-        } else {
-          alert(data.error || 'Something went wrong.');
-          saveBtn.disabled = false;
-          saveBtn.textContent = 'Save';
-        }
-      } catch (err) {
-        alert('Request failed: ' + err.message);
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Save';
-      }
-    });
-
-    document.body.addEventListener('submit', async function(e) {
-      if (!e.target.classList.contains('delete-form')) return;
-      e.preventDefault();
-      const form = e.target;
-      const resp = await fetch('http://localhost:3000/', {
-        method: 'POST',
-        body: new URLSearchParams(new FormData(form)),
-      });
-      const data = await resp.json();
-      if (data.ok) {
-        window.location.reload();
-      } else {
-        alert(data.error || 'Delete failed.');
-      }
-    });
   </script>
 </body>
 </html>
