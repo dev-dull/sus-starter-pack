@@ -233,19 +233,13 @@
       row.querySelector('input').focus();
     }
 
-    document.body.addEventListener('openDrawer', function() {
-      console.log('[drawer] openDrawer event received, calling openDrawer()');
-      openDrawer();
+    // Prepend the proxy base path so HTMX requests reach the app
+    document.body.addEventListener('htmx:configRequest', function(evt) {
+      var base = window.location.pathname.replace(/\/+$/, '');
+      if (base) evt.detail.path = base + evt.detail.path;
     });
 
-    console.log('[debug] page URL:', window.location.href);
-
-    // Debug: log all htmx events on body
-    ['htmx:beforeRequest', 'htmx:afterRequest', 'htmx:beforeSwap', 'htmx:afterSwap', 'htmx:responseError', 'htmx:sendError', 'openDrawer'].forEach(function(name) {
-      document.body.addEventListener(name, function(evt) {
-        console.log('[htmx]', name, evt.detail);
-      });
-    });
+    document.body.addEventListener('openDrawer', openDrawer);
 
     // Show toast on credSaved event
     document.body.addEventListener('credSaved', () => {
