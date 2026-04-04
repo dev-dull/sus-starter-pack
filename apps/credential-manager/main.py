@@ -172,11 +172,19 @@ async def index(
         return await render_index(request)
 
     if action == "update":
-        check = await http.get(f"/api/secrets/{secret_name}")
+        check = await http.get(f"/api/secrets/{secret_name}", params={"values": "true"})
         if check.status_code == 404:
             return await render_index(request, error="Credential not found.")
 
-        data = {k: v for k, v in zip(keys, values) if k.strip() and v.strip()}
+        existing_data = check.json().get("data", {})
+        data = {}
+        for k, v in zip(keys, values):
+            if not k.strip():
+                continue
+            if v.strip():
+                data[k] = v  # new or updated value
+            elif k in existing_data:
+                data[k] = existing_data[k]  # preserve existing value
         data[dn_key(display_name)] = "1"
         if description:
             data[ds_key(description)] = "1"
