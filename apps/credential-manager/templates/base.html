@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Credential Manager</title>
-  <script src="https://unpkg.com/htmx.org@2.0.3/dist/htmx.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -206,7 +205,55 @@
   <!-- Drawer for create/edit -->
   <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer(event)">
     <div class="drawer" id="drawer-panel">
-      <div id="drawer-content"><!-- loaded via HTMX --></div>
+      <div class="drawer-header">
+        <h2 id="drawer-title">New credential</h2>
+        <button class="close-btn" onclick="closeDrawerForce()">×</button>
+      </div>
+
+      <form action="." method="post" id="cred-form">
+        <input type="hidden" name="_action" id="form-action" value="create">
+        <input type="hidden" name="_name" id="form-name" value="">
+        <div style="display:flex;flex-direction:column;gap:1rem;">
+
+          <div class="form-group">
+            <label for="display_name">Name</label>
+            <input id="display_name" name="display_name" type="text"
+              placeholder="e.g. Stripe API Keys" required autocomplete="off" />
+          </div>
+
+          <div class="form-group">
+            <label for="description">Description <span style="font-weight:400;color:#8e8e93;">(optional)</span></label>
+            <input id="description" name="description" type="text"
+              placeholder="What is this credential for?" autocomplete="off" />
+          </div>
+
+          <div class="form-group">
+            <label>Keys &amp; values</label>
+            <p id="edit-hint" style="display:none;font-size:0.78rem;color:#8e8e93;margin-bottom:0.4rem;">
+              Values are write-only and cannot be retrieved. Enter new values for any keys you want to update; leave blank to remove that key.
+            </p>
+            <div class="kv-rows" id="kv-rows">
+              <div class="kv-row">
+                <input type="text" name="keys" placeholder="KEY_NAME" autocomplete="off" spellcheck="false" />
+                <input type="password" name="values" placeholder="value" autocomplete="off" spellcheck="false" />
+                <button type="button" class="remove-kv" onclick="this.closest('.kv-row').remove()">×</button>
+              </div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm"
+              style="margin-top:0.5rem;align-self:flex-start;"
+              onclick="addKvRow(document.getElementById('kv-rows'))">+ Add key</button>
+          </div>
+
+          <p id="secret-name-hint" style="display:none;font-size:0.78rem;color:#6e6e73;background:#f5f5f7;padding:0.6rem 0.8rem;border-radius:6px;">
+            Secret name: <code id="secret-name-code" style="font-family:monospace;"></code>
+          </p>
+
+          <div class="form-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeDrawerForce()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -222,54 +269,52 @@
       document.getElementById('drawer-overlay').classList.remove('open');
     }
 
-    function addKvRow(container) {
+    function addKvRow(container, key, value) {
       const row = document.createElement('div');
       row.className = 'kv-row';
       row.innerHTML = `
         <input type="text" name="keys" placeholder="KEY_NAME" autocomplete="off" spellcheck="false" />
         <input type="password" name="values" placeholder="value" autocomplete="off" spellcheck="false" />
         <button type="button" class="remove-kv" onclick="this.closest('.kv-row').remove()">×</button>`;
+      if (key !== undefined) row.querySelector('input[name="keys"]').value = key;
+      if (value !== undefined) row.querySelector('input[name="values"]').value = value;
       container.appendChild(row);
-      row.querySelector('input').focus();
+      if (key === undefined) row.querySelector('input').focus();
     }
 
-    // === DEBUGGING ===
-    window.addEventListener('load', function() {
-      console.log('[debug] HTMX available:', typeof htmx !== 'undefined', window.htmx && htmx.version);
-      console.log('[debug] page URL:', window.location.href);
-      var btn = document.querySelector('[hx-get]');
-      console.log('[debug] first hx-get element:', btn ? btn.tagName + ' hx-get=' + btn.getAttribute('hx-get') : 'NOT FOUND');
-    });
-    ['htmx:beforeRequest','htmx:afterRequest','htmx:responseError','htmx:sendError'].forEach(function(e) {
-      document.body.addEventListener(e, function(evt) {
-        var path = evt.detail.pathInfo ? evt.detail.pathInfo.requestPath : (evt.detail.path || '?');
-        console.log('[htmx]', e, path, evt.detail.failed ? 'FAILED' : 'OK');
-      });
-    });
-    document.body.addEventListener('htmx:beforeSwap', function(evt) {
-      console.log('[htmx] htmx:beforeSwap shouldSwap=' + evt.detail.shouldSwap + ' status=' + evt.detail.xhr.status);
-      console.log('[htmx] response preview:', evt.detail.serverResponse && evt.detail.serverResponse.substring(0, 120));
-      console.log('[htmx] HX-Trigger header:', evt.detail.xhr.getResponseHeader('HX-Trigger'));
-    });
-    document.body.addEventListener('openDrawer', function() {
-      console.log('[debug] openDrawer event fired!');
+    function openNewDrawer() {
+      document.getElementById('drawer-title').textContent = 'New credential';
+      document.getElementById('form-action').value = 'create';
+      document.getElementById('form-name').value = '';
+      document.getElementById('display_name').value = '';
+      document.getElementById('description').value = '';
+      document.getElementById('edit-hint').style.display = 'none';
+      document.getElementById('secret-name-hint').style.display = 'none';
+      const kvRows = document.getElementById('kv-rows');
+      kvRows.innerHTML = '';
+      addKvRow(kvRows);
       openDrawer();
-    });
-    document.body.addEventListener('click', function(e) {
-      if (e.target.closest('[hx-get],[hx-post],[hx-put],[hx-delete]')) {
-        var el = e.target.closest('[hx-get],[hx-post],[hx-put],[hx-delete]');
-        console.log('[debug] click on htmx element:', el.tagName, Object.values(el.attributes).filter(a=>a.name.startsWith('hx-')).map(a=>a.name+'='+a.value).join(' '));
-      }
-    });
-    // === END DEBUGGING ===
+      document.getElementById('display_name').focus();
+    }
 
-    // Show toast on credSaved event
-    document.body.addEventListener('credSaved', () => {
-      closeDrawerForce();
-      const t = document.getElementById('toast');
-      t.classList.add('show');
-      setTimeout(() => t.classList.remove('show'), 2500);
-    });
+    function openEditDrawer(name, displayName, description, keys) {
+      document.getElementById('drawer-title').textContent = 'Edit credential';
+      document.getElementById('form-action').value = 'update';
+      document.getElementById('form-name').value = name;
+      document.getElementById('display_name').value = displayName;
+      document.getElementById('description').value = description || '';
+      document.getElementById('edit-hint').style.display = '';
+      document.getElementById('secret-name-code').textContent = name;
+      document.getElementById('secret-name-hint').style.display = '';
+      const kvRows = document.getElementById('kv-rows');
+      kvRows.innerHTML = '';
+      if (keys && keys.length > 0) {
+        keys.forEach(function(k) { addKvRow(kvRows, k, ''); });
+      } else {
+        addKvRow(kvRows);
+      }
+      openDrawer();
+    }
   </script>
 </body>
 </html>

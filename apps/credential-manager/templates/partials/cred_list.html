@@ -17,17 +17,14 @@
     <div class="cred-actions">
       <button
         class="btn btn-secondary btn-sm"
-        hx-get="?_drawer={{ cred.name }}"
-        hx-target="#drawer-content"
-        hx-swap="innerHTML"
+        onclick="openEditDrawer({{ cred.name | tojson }}, {{ cred.display_name | tojson }}, {{ cred.description | tojson }}, {{ cred.keys | tojson }})"
       >Edit</button>
-      <button
-        class="btn btn-danger btn-sm"
-        hx-delete="?_name={{ cred.name }}"
-        hx-target="#cred-list"
-        hx-swap="innerHTML"
-        hx-confirm="Delete &quot;{{ cred.display_name }}&quot;? This cannot be undone."
-      >Delete</button>
+      <form method="post" action="." style="display:inline;"
+        onsubmit="return confirm('Delete \u201c{{ cred.display_name }}\u201d? This cannot be undone.')">
+        <input type="hidden" name="_action" value="delete">
+        <input type="hidden" name="_name" value="{{ cred.name }}">
+        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+      </form>
     </div>
   </div>
   {% endfor %}
