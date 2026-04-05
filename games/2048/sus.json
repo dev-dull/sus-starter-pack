@@ -1,0 +1,10 @@
+{
+  "name": "2048",
+  "description": "The classic sliding tile puzzle game. Combine tiles to reach 2048!",
+  "owner": "alastair",
+  "team": "games",
+  "created_at": "2026-04-05",
+  "visibility": ["default"],
+  "default_stack": "static",
+  "tags": ["games", "demo"]
+}

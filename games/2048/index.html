@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2048</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #faf8ef;
+      font-family: "Clear Sans", "Helvetica Neue", Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    header {
+      width: 100%;
+      max-width: 500px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    h1 { font-size: 72px; font-weight: 700; color: #776e65; line-height: 1; }
+
+    .scores { display: flex; gap: 8px; }
+
+    .score-box {
+      background: #bbada0;
+      border-radius: 6px;
+      padding: 8px 14px;
+      text-align: center;
+      min-width: 70px;
+    }
+    .score-box .label {
+      font-size: 11px; font-weight: 700; color: #eee4da;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .score-box .value { font-size: 22px; font-weight: 700; color: #fff; }
+
+    .controls {
+      width: 100%; max-width: 500px;
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 16px;
+    }
+    .subtitle { font-size: 14px; color: #776e65; }
+
+    button {
+      background: #8f7a66; color: #f9f6f2;
+      border: none; border-radius: 6px;
+      padding: 10px 18px; font-size: 14px; font-weight: 700;
+      cursor: pointer; transition: background 0.15s;
+    }
+    button:hover { background: #7a6555; }
+
+    .board-wrapper { position: relative; width: 100%; max-width: 500px; }
+
+    .overlay {
+      position: absolute; inset: 0;
+      background: rgba(238, 228, 218, 0.73);
+      border-radius: 10px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px;
+      z-index: 20; opacity: 0; pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    .overlay.visible { opacity: 1; pointer-events: all; }
+    .overlay-msg { font-size: 48px; font-weight: 700; color: #776e65; }
+
+    /* ── Board ──────────────────────────────────────────────────────────────
+       Tiles are absolutely positioned. With padding=12, gap=12, 4 cells:
+         cell size = (100% - 60px) / 4
+         cell step = (100% - 12px) / 4
+         cell left = 12px + col × (100% - 12px) / 4
+    ────────────────────────────────────────────────────────────────────── */
+    #board {
+      position: relative;
+      background: #bbada0;
+      border-radius: 10px;
+      padding: 12px;
+      width: 100%;
+      aspect-ratio: 1;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .bg-cell, .tile {
+      position: absolute;
+      width:  calc((100% - 60px) / 4);
+      height: calc((100% - 60px) / 4);
+      left: calc(12px + var(--col, 0) * (100% - 12px) / 4);
+      top:  calc(12px + var(--row, 0) * (100% - 12px) / 4);
+      border-radius: 6px;
+    }
+
+    .bg-cell { background: rgba(238, 228, 218, 0.35); z-index: 1; }
+
+    .tile {
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      font-size: clamp(18px, 4vw, 40px);
+      z-index: 2;
+    }
+
+    /* ── Animations ─────────────────────────────────────────────────────────
+       All motion is handled by CSS animations, not transitions.
+       Every move triggers a single syncDOM() call; CSS sequences the rest.
+
+       Slide keyframe: animates LEFT/TOP from --from-col/--from-row to the
+       tile's natural position (--col/--row). The "to" state is implicit —
+       it's the element's own computed style once the animation ends.
+
+       Timeline per move (SLIDE_MS = 80):
+         0 ─────── SLIDE_MS ──── SLIDE_MS+POP_MS
+         [  slide  ][  pop/appear  ]
+    ────────────────────────────────────────────────────────────────────── */
+    @keyframes tile-slide {
+      from {
+        left: calc(12px + var(--from-col) * (100% - 12px) / 4);
+        top:  calc(12px + var(--from-row) * (100% - 12px) / 4);
+      }
+    }
+    @keyframes tile-pop {
+      0%   { transform: scale(1); }
+      50%  { transform: scale(1.2); }
+      100% { transform: scale(1); }
+    }
+    @keyframes tile-appear {
+      from { transform: scale(0); }
+      80%  { transform: scale(1.12); }
+      to   { transform: scale(1); }
+    }
+
+    /* Plain slide (no merge) */
+    .tile.sliding {
+      animation: tile-slide 80ms ease both;
+    }
+
+    /* Slides then pops with new value — sits on top of merge-away */
+    .tile.merging {
+      animation: tile-slide 80ms ease both, tile-pop 100ms 80ms ease both;
+      z-index: 4;
+    }
+
+    /* Slides to destination then hides under the merging tile */
+    .tile.merge-away {
+      animation: tile-slide 80ms ease both;
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    /* Appears after slides complete */
+    .tile.new {
+      animation: tile-appear 100ms 80ms ease both;
+    }
+
+    /* Tile colours */
+    .t2    { background: #eee4da; color: #776e65; }
+    .t4    { background: #ede0c8; color: #776e65; }
+    .t8    { background: #f2b179; color: #f9f6f2; }
+    .t16   { background: #f59563; color: #f9f6f2; }
+    .t32   { background: #f67c5f; color: #f9f6f2; }
+    .t64   { background: #f65e3b; color: #f9f6f2; }
+    .t128  { background: #edcf72; color: #f9f6f2; font-size: clamp(15px, 3.5vw, 36px); }
+    .t256  { background: #edcc61; color: #f9f6f2; font-size: clamp(15px, 3.5vw, 36px); }
+    .t512  { background: #edc850; color: #f9f6f2; font-size: clamp(15px, 3.5vw, 36px); }
+    .t1024 { background: #edc53f; color: #f9f6f2; font-size: clamp(13px, 3vw, 30px); }
+    .t2048 { background: #edc22e; color: #f9f6f2; font-size: clamp(13px, 3vw, 30px); }
+    .tsuper { background: #3c3a32; color: #f9f6f2; font-size: clamp(11px, 2.5vw, 26px); }
+
+    .hint { margin-top: 14px; font-size: 13px; color: #bbada0; text-align: center; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>2048</h1>
+  <div class="scores">
+    <div class="score-box"><div class="label">Score</div><div class="value" id="score">0</div></div>
+    <div class="score-box"><div class="label">Best</div><div class="value" id="best">0</div></div>
+  </div>
+</header>
+
+<div class="controls">
+  <span class="subtitle">Join tiles to reach <strong>2048!</strong></span>
+  <button id="newGame">New Game</button>
+</div>
+
+<div class="board-wrapper">
+  <div class="overlay" id="overlay">
+    <div class="overlay-msg" id="overlayMsg"></div>
+    <button id="overlayBtn">Try Again</button>
+  </div>
+  <div id="board"></div>
+</div>
+
+<p class="hint">Use arrow keys or swipe to play.</p>
+
+<script>
+  // ── Cookie helpers ─────────────────────────────────────────────────────────
+  function setCookie(name, value, days = 3650) {
+    const exp = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = `${name}=${encodeURIComponent(value)};expires=${exp};path=/;SameSite=Lax`;
+  }
+  function getCookie(name) {
+    const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let tiles = [];
+  let nextId = 0;
+  let score = 0, best = 0;
+  let animating   = false;
+  let wonShown    = false;
+  let pendingMove = null;
+
+  const tileEls = new Map(); // id → DOM element
+
+  function makeTile(value, row, col) {
+    return { id: nextId++, value, row, col, isNew: false };
+  }
+
+  function cellMap() {
+    const m = Array.from({ length: 4 }, () => Array(4).fill(null));
+    for (const t of tiles) m[t.row][t.col] = t;
+    return m;
+  }
+
+  // ── Line helpers ───────────────────────────────────────────────────────────
+  function getLine(map, idx, dir) {
+    switch (dir) {
+      case 'left':  return [0,1,2,3].map(c => map[idx][c]);
+      case 'right': return [3,2,1,0].map(c => map[idx][c]);
+      case 'up':    return [0,1,2,3].map(r => map[r][idx]);
+      case 'down':  return [3,2,1,0].map(r => map[r][idx]);
+    }
+  }
+
+  function lineToGrid(idx, pos, dir) {
+    switch (dir) {
+      case 'left':  return [idx,     pos];
+      case 'right': return [idx,     3 - pos];
+      case 'up':    return [pos,     idx];
+      case 'down':  return [3 - pos, idx];
+    }
+  }
+
+  // ── Compress ───────────────────────────────────────────────────────────────
+  function compressLine(line) {
+    const src = line.filter(Boolean);
+    const moves = [], merges = [];
+    let gained = 0, out = 0, i = 0;
+    while (i < src.length) {
+      if (i + 1 < src.length && src[i].value === src[i + 1].value) {
+        const v = src[i].value * 2;
+        gained += v;
+        moves.push({ tile: src[i],     pos: out });
+        moves.push({ tile: src[i + 1], pos: out });
+        merges.push({ into: src[i], from: src[i + 1], newValue: v });
+        i += 2;
+      } else {
+        moves.push({ tile: src[i], pos: out });
+        i++;
+      }
+      out++;
+    }
+    return { moves, merges, gained };
+  }
+
+  // ── Spawn ──────────────────────────────────────────────────────────────────
+  function spawnRandom(isNew) {
+    const map = cellMap();
+    const empty = [];
+    for (let r = 0; r < 4; r++)
+      for (let c = 0; c < 4; c++)
+        if (!map[r][c]) empty.push([r, c]);
+    if (!empty.length) return;
+    const [r, c] = empty[Math.floor(Math.random() * empty.length)];
+    const t = makeTile(Math.random() < 0.9 ? 2 : 4, r, c);
+    t.isNew = isNew;
+    tiles.push(t);
+  }
+
+  // ── Move ───────────────────────────────────────────────────────────────────
+  // Animation timeline (ms):
+  //   0 ──────── 80 ──────── 180
+  //   [ slide  ] [ pop/appear ]
+  const SLIDE_MS = 80;
+  const POST_MS  = 100; // pop + appear duration
+  const TOTAL_MS = SLIDE_MS + POST_MS + 20; // +buffer
+
+  function move(dir) {
+    if (animating) { pendingMove = dir; return; }
+
+    // 1. Snapshot positions before any changes
+    const oldPos = new Map(tiles.map(t => [t.id, { row: t.row, col: t.col }]));
+
+    // 2. Compute all moves and merges
+    const map = cellMap();
+    let hasMoved = false, totalGained = 0;
+    const allMerges = [], removeIds = new Set(), mergeIntoIds = new Set();
+
+    for (let li = 0; li < 4; li++) {
+      const { moves, merges, gained } = compressLine(getLine(map, li, dir));
+      totalGained += gained;
+      for (const { tile, pos } of moves) {
+        const [nr, nc] = lineToGrid(li, pos, dir);
+        if (nr !== tile.row || nc !== tile.col) hasMoved = true;
+        tile.row = nr; tile.col = nc;
+      }
+      for (const mg of merges) {
+        allMerges.push(mg);
+        removeIds.add(mg.from.id);
+        mergeIntoIds.add(mg.into.id);
+      }
+    }
+
+    if (!hasMoved) return;
+
+    // 3. Apply merge values and score
+    for (const { into, newValue } of allMerges) into.value = newValue;
+    score += totalGained;
+    if (score > best) { best = score; saveBest(best); }
+
+    // 4. Spawn new tile (added to `tiles` now, DOM element created in syncDOM)
+    spawnRandom(true);
+
+    // 5. Single DOM update — all animation classes applied in one pass
+    animating = true;
+    syncDOM(oldPos, removeIds, mergeIntoIds);
+    updateScores();
+
+    // 6. Cleanup after all animations finish
+    setTimeout(() => {
+      // Remove merge-away tiles from DOM and state
+      for (const id of removeIds) { tileEls.get(id)?.remove(); tileEls.delete(id); }
+      tiles = tiles.filter(t => !removeIds.has(t.id));
+
+      // Clear animation classes so next move starts clean
+      for (const t of tiles) {
+        t.isNew = false;
+        const el = tileEls.get(t.id);
+        if (el) el.className = `tile ${tileClass(t.value)}`;
+      }
+
+      animating = false;
+      checkState();
+      if (pendingMove) { const d = pendingMove; pendingMove = null; move(d); }
+    }, TOTAL_MS);
+  }
+
+  // ── DOM sync (called once per move) ───────────────────────────────────────
+  function tileClass(v) { return v > 2048 ? 'tsuper' : 't' + v; }
+
+  function syncDOM(oldPos, removeIds, mergeIntoIds) {
+    const board = document.getElementById('board');
+
+    for (const tile of tiles) {
+      const old = oldPos.get(tile.id);
+      let el = tileEls.get(tile.id);
+
+      if (!el) {
+        // Newly spawned tile — placed at final position, appears after slides
+        el = document.createElement('div');
+        el.style.setProperty('--row', tile.row);
+        el.style.setProperty('--col', tile.col);
+        el.className = `tile ${tileClass(tile.value)} new`;
+        el.textContent = tile.value;
+        board.appendChild(el);
+        tileEls.set(tile.id, el);
+        continue;
+      }
+
+      // Set destination (--row/--col are the tile's natural position)
+      el.style.setProperty('--row', tile.row);
+      el.style.setProperty('--col', tile.col);
+
+      const isAway = removeIds.has(tile.id);
+      const isInto = mergeIntoIds.has(tile.id);
+      const moved  = old.row !== tile.row || old.col !== tile.col;
+
+      if (isAway) {
+        // Slides to merge destination, then disappears under the merging tile
+        el.style.setProperty('--from-row', old.row);
+        el.style.setProperty('--from-col', old.col);
+        el.className = `tile ${tileClass(tile.value)} merge-away`;
+      } else if (isInto) {
+        // Slides (if it moved) then pops — shows new value throughout
+        el.textContent = tile.value;
+        el.style.setProperty('--from-row', moved ? old.row : tile.row);
+        el.style.setProperty('--from-col', moved ? old.col : tile.col);
+        el.className = `tile ${tileClass(tile.value)} merging`;
+      } else if (moved) {
+        el.style.setProperty('--from-row', old.row);
+        el.style.setProperty('--from-col', old.col);
+        el.className = `tile ${tileClass(tile.value)} sliding`;
+      } else {
+        el.className = `tile ${tileClass(tile.value)}`;
+      }
+    }
+  }
+
+  function updateScores() {
+    document.getElementById('score').textContent = score;
+    document.getElementById('best').textContent  = best;
+  }
+
+  // ── Game state ─────────────────────────────────────────────────────────────
+  function checkState() {
+    if (!wonShown && tiles.some(t => t.value >= 2048)) {
+      wonShown = true;
+      showOverlay('You win!');
+      return;
+    }
+    const map = cellMap();
+    for (let r = 0; r < 4; r++)
+      for (let c = 0; c < 4; c++) {
+        if (!map[r][c]) return;
+        if (c + 1 < 4 && map[r][c].value === map[r][c + 1].value) return;
+        if (r + 1 < 4 && map[r][c].value === map[r + 1][c].value) return;
+      }
+    showOverlay('Game over!');
+  }
+
+  // ── Overlay ────────────────────────────────────────────────────────────────
+  function showOverlay(msg) {
+    document.getElementById('overlayMsg').textContent = msg;
+    document.getElementById('overlay').classList.add('visible');
+  }
+  function hideOverlay() {
+    document.getElementById('overlay').classList.remove('visible');
+  }
+
+  // ── Score persistence ──────────────────────────────────────────────────────
+  function loadBest() { return parseInt(getCookie('2048_best') || '0', 10); }
+  function saveBest(v) { setCookie('2048_best', v); }
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  function initGame() {
+    for (const [, el] of tileEls) el.remove();
+    tileEls.clear();
+    tiles       = [];
+    score       = 0;
+    best        = loadBest();
+    animating   = false;
+    wonShown    = false;
+    pendingMove = null;
+
+    const board = document.getElementById('board');
+    board.querySelectorAll('.bg-cell').forEach(e => e.remove());
+    for (let r = 0; r < 4; r++)
+      for (let c = 0; c < 4; c++) {
+        const cell = document.createElement('div');
+        cell.className = 'bg-cell';
+        cell.style.setProperty('--row', r);
+        cell.style.setProperty('--col', c);
+        board.appendChild(cell);
+      }
+
+    spawnRandom(false);
+    spawnRandom(false);
+    syncDOM(new Map(), new Set(), new Set()); // no animations on init
+    updateScores();
+    hideOverlay();
+  }
+
+  // ── Input: keyboard ────────────────────────────────────────────────────────
+  const keyMap = { ArrowLeft:'left', ArrowRight:'right', ArrowUp:'up', ArrowDown:'down' };
+  document.addEventListener('keydown', e => {
+    const dir = keyMap[e.key];
+    if (!dir) return;
+    e.preventDefault();
+    move(dir);
+  });
+
+  // ── Input: touch / swipe ───────────────────────────────────────────────────
+  let touchStart = null;
+  const boardEl  = document.getElementById('board');
+
+  boardEl.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    touchStart = { x: t.clientX, y: t.clientY };
+  }, { passive: true });
+
+  boardEl.addEventListener('touchend', e => {
+    if (!touchStart) return;
+    const t  = e.changedTouches[0];
+    const dx = t.clientX - touchStart.x;
+    const dy = t.clientY - touchStart.y;
+    touchStart = null;
+    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+    if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 'right' : 'left');
+    else                              move(dy > 0 ? 'down'  : 'up');
+  }, { passive: true });
+
+  // ── Buttons ────────────────────────────────────────────────────────────────
+  document.getElementById('newGame').addEventListener('click', initGame);
+  document.getElementById('overlayBtn').addEventListener('click', initGame);
+
+  // ── Start ──────────────────────────────────────────────────────────────────
+  initGame();
+</script>
+</body>
+</html>
