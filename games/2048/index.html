@@ -218,7 +218,6 @@
   let score = 0, best = 0;
   let animating   = false;
   let wonShown    = false;
-  let pendingMove = null;
 
   const tileEls = new Map(); // id → DOM element
 
@@ -296,7 +295,7 @@
   const TOTAL_MS = SLIDE_MS + POST_MS + 20; // +buffer
 
   function move(dir) {
-    if (animating) { pendingMove = dir; return; }
+    if (animating) return;
 
     // 1. Snapshot positions before any changes
     const oldPos = new Map(tiles.map(t => [t.id, { row: t.row, col: t.col }]));
@@ -351,7 +350,6 @@
 
       animating = false;
       checkState();
-      if (pendingMove) { const d = pendingMove; pendingMove = null; move(d); }
     }, TOTAL_MS);
   }
 
@@ -450,7 +448,6 @@
     best        = loadBest();
     animating   = false;
     wonShown    = false;
-    pendingMove = null;
 
     const board = document.getElementById('board');
     board.querySelectorAll('.bg-cell').forEach(e => e.remove());
@@ -476,6 +473,7 @@
     const dir = keyMap[e.key];
     if (!dir) return;
     e.preventDefault();
+    if (e.repeat) return;
     move(dir);
   });
 
@@ -494,7 +492,7 @@
     const dx = t.clientX - touchStart.x;
     const dy = t.clientY - touchStart.y;
     touchStart = null;
-    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+    if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return;
     if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 'right' : 'left');
     else                              move(dy > 0 ? 'down'  : 'up');
   }, { passive: true });
