@@ -1,0 +1,11 @@
+from fastapi import FastAPI, Request
+from fastapi.templating import Jinja2Templates
+
+app = FastAPI()
+templates = Jinja2Templates(directory="templates")
+
+
+@app.get("/")
+def home(request: Request):
+    name = request.headers.get("X-SUS-Name", "Guest")
+    return templates.TemplateResponse(request, "index.html", {"name": name})
