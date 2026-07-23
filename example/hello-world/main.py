@@ -8,4 +8,4 @@ templates = Jinja2Templates(directory="templates")
 @app.get("/")
 def home(request: Request):
     name = request.headers.get("X-SUS-Name", "World")
-    return templates.TemplateResponse("index.html", {"request": request, "name": name})
+    return templates.TemplateResponse(request, "index.html", {"name": name})
