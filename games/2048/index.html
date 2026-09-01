@@ -24,6 +24,7 @@
       --_radius:       var(--radius, 12px);
       --_radius-sm:    var(--radius-sm, 7px);
       --_shadow:       var(--shadow-card, 0 1px 2px rgba(31, 27, 22, 0.05), 0 10px 30px rgba(31, 27, 22, 0.07));
+      --_ease-snap:    cubic-bezier(0.22, 1, 0.36, 1);
       --_font:         var(--font-ui, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
     }
 
@@ -215,10 +216,13 @@
        expressed as --dx/--dy) and animates back to translate(0, 0), which is
        the tile's natural position.
 
-       Timeline per move (SLIDE_MS = 70):
-         0 ─────── 70 ──────── 170
-         [ slide ][ pop/appear ]
-       Input unlocks at 70ms — the pop is cosmetic and does not gate the
+       Timeline per move (SLIDE_MS = 65):
+         0 ────── 65 ─────── 130
+         [ slide ][ pop      ]
+              [ appear ]  (starts at 40ms)
+       The easing is easeOutQuint: nearly all the distance is covered in the
+       first third of the slide, so it reads as instant with a soft landing.
+       Input unlocks at 65ms — the pop is cosmetic and does not gate the
        next move.
     ────────────────────────────────────────────────────────────────────── */
     @keyframes tile-slide {
@@ -227,41 +231,41 @@
     }
 
     /* Slide and pop in one animation: two animations on the same element
-       cannot both drive `transform`. 41% == 70ms of the 170ms total. */
+       cannot both drive `transform`. 50% == 65ms of the 130ms total. */
     @keyframes tile-merge {
       0%   { transform: translate(var(--dx), var(--dy)) scale(1); }
-      41%  { transform: translate(0, 0) scale(1); }
-      70%  { transform: translate(0, 0) scale(1.18); }
+      50%  { transform: translate(0, 0) scale(1); }
+      78%  { transform: translate(0, 0) scale(1.15); }
       100% { transform: translate(0, 0) scale(1); }
     }
 
     @keyframes tile-appear {
-      from { transform: scale(0.2); opacity: 0; }
-      70%  { transform: scale(1.1);  opacity: 1; }
+      from { transform: scale(0.35); opacity: 0; }
+      60%  { transform: scale(1.06); opacity: 1; }
       to   { transform: scale(1);    opacity: 1; }
     }
 
     /* Plain slide (no merge) */
     .tile.sliding {
-      animation: tile-slide 70ms ease-out both;
+      animation: tile-slide 65ms var(--_ease-snap) both;
     }
 
     /* Slides then pops with new value — sits on top of merge-away */
     .tile.merging {
-      animation: tile-merge 170ms ease-out both;
+      animation: tile-merge 130ms var(--_ease-snap) both;
       z-index: 4;
     }
 
     /* Slides to destination then hides under the merging tile */
     .tile.merge-away {
-      animation: tile-slide 70ms ease-out both;
+      animation: tile-slide 65ms var(--_ease-snap) both;
       z-index: 3;
       pointer-events: none;
     }
 
-    /* Appears after slides complete */
+    /* Appears just before the slides land, so the board settles as one */
     .tile.new {
-      animation: tile-appear 100ms 70ms ease-out both;
+      animation: tile-appear 90ms 40ms var(--_ease-snap) both;
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -435,15 +439,15 @@
 
   // ── Move ───────────────────────────────────────────────────────────────────
   // Animation timeline (ms):
-  //   0 ──────── 70 ──────── 170
-  //   [ slide  ] [ pop/appear ]
+  //   0 ──────── 65 ─────── 130
+  //   [ slide  ] [ pop      ]
   //
   // Input unlocks when the slide lands, not when the whole animation ends —
   // the pop and the new-tile appear are cosmetic and keep running while the
-  // next move is already being accepted. A key pressed inside that 70ms
+  // next move is already being accepted. A key pressed inside that 65ms
   // window is buffered rather than dropped.
-  const SLIDE_MS  = 70;  // slide duration — also the input lock
-  const SETTLE_MS = 180; // pop + appear have finished by here
+  const SLIDE_MS  = 65;  // slide duration — also the input lock
+  const SETTLE_MS = 140; // pop + appear have finished by here
 
   let unlockTimer = null;
   let settleTimer = null;
@@ -462,7 +466,15 @@
 
   function move(dir) {
     if (animating) { bufferedDir = dir; return; }
-    settle(); // finish the previous move's cosmetics before starting this one
+
+    // Finish the previous move's cosmetics before starting this one. The flush
+    // is essential: settle() and syncDOM() run in the same task, so without a
+    // style recalculation in between, the browser only ever sees the final
+    // computed style. `animation-name` would go tile-slide -> tile-slide, look
+    // unchanged, and the animation would NOT restart — the tile would jump
+    // straight to its new cell. Reading a layout property forces the flush.
+    settle();
+    void boardEl.offsetHeight;
 
     // 1. Snapshot positions before any changes
     const oldPos = new Map(tiles.map(t => [t.id, { row: t.row, col: t.col }]));
