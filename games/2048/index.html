@@ -207,7 +207,7 @@
       display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 16px;
       z-index: 20; opacity: 0; pointer-events: none;
-      transition: opacity 0.3s;
+      transition: opacity 0.18s;
     }
     .overlay.visible {
       opacity: 1; pointer-events: all;
@@ -233,8 +233,8 @@
 
        Timeline per move:
          0 ────────────── 90        slide
-              45 ────────── 145     pop    (merged tiles, peaks at 90)
-              45 ─────────── 155    appear (spawned tile)
+         0 ────────────── 90        pop    (merged tiles)
+           30 ──────────── 115      appear (spawned tile)
          0 ─── 62                   input locked, absorbed tiles removed
 
        easeOutCubic, not something more aggressive: at 90ms a slide only gets
@@ -276,10 +276,13 @@
       animation-duration: 62ms;
     }
 
-    /* Delayed so the pop peaks at 90ms — exactly as the slide lands, which
-       reads as impact rather than a tile wobbling in mid-flight. */
-    .tile-face.pop    { animation: face-pop 100ms 45ms var(--_ease-out) both; }
-    .tile-face.appear { animation: face-appear 110ms 45ms var(--_ease-out) both; }
+    /* No delay: the pop runs alongside the slide and lands with it, so a merge
+       reads the moment it happens instead of 45ms later. */
+    .tile-face.pop { animation: face-pop 90ms var(--_ease-out) both; }
+
+    /* The only remaining wait in the game, and it is 2 frames: just enough
+       that a spawned tile does not compete with the slide for attention. */
+    .tile-face.appear { animation: face-appear 85ms 30ms var(--_ease-out) both; }
 
     @media (prefers-reduced-motion: reduce) {
       .tile.sliding, .tile-face.pop, .tile-face.appear {
@@ -449,15 +452,15 @@
   // ── Move ───────────────────────────────────────────────────────────────────
   // Animation timeline (ms):
   //   0 ────────────── 90    slide
-  //        45 ────────── 145  pop (peaks at 90, as the slide lands)
-  //        45 ─────────── 155 appear
+  //   0 ────────────── 90    pop
+  //     30 ──────────── 115  appear
   //   0 ─── 62                input locked
   //
   // Input unlocks at 62ms, well before the animations end — they are cosmetic
   // and keep running while the next move is already being accepted. A key
   // pressed inside that window is buffered rather than dropped.
   const LOCK_MS   = 62;  // input lock — shorter than the 90ms slide on purpose
-  const SETTLE_MS = 170; // every animation has finished by here
+  const SETTLE_MS = 130; // every animation has finished by here
 
   let unlockTimer = null;
   let settleTimer = null;
