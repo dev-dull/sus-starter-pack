@@ -24,7 +24,7 @@
       --_radius:       var(--radius, 12px);
       --_radius-sm:    var(--radius-sm, 7px);
       --_shadow:       var(--shadow-card, 0 1px 2px rgba(31, 27, 22, 0.05), 0 10px 30px rgba(31, 27, 22, 0.07));
-      --_ease-snap:    cubic-bezier(0.22, 1, 0.36, 1);
+      --_ease-out:     cubic-bezier(0.215, 0.61, 0.355, 1); /* easeOutCubic */
       --_font:         var(--font-ui, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
     }
 
@@ -161,27 +161,42 @@
       height: calc((100% - 60px) / 4);
       left: calc(12px + var(--col, 0) * (100% - 12px) / 4);
       top:  calc(12px + var(--row, 0) * (100% - 12px) / 4);
-      border-radius: var(--_radius-sm);
     }
 
     .bg-cell {
       background: var(--_panel);
       border: 1px solid var(--_line);
+      border-radius: var(--_radius-sm);
       opacity: 0.55;
       z-index: 1;
     }
 
+    /* A tile is two elements: an outer box that only ever moves, and an inner
+       face that carries everything visible and only ever scales. Splitting
+       them means sliding and popping never fight over `transform`, so a pop
+       can play out in full while its tile is already sliding again. */
     .tile {
       /* Slide offset, in tile-widths: one grid step = own width + the 12px gap.
          Used by the keyframes below so motion is a transform, never a reflow. */
       --dx: calc((var(--from-col, var(--col, 0)) - var(--col, 0)) * (100% + 12px));
       --dy: calc((var(--from-row, var(--row, 0)) - var(--row, 0)) * (100% + 12px));
+      z-index: 2;
+      /* Held on the compositor: every tile moves on almost every turn, and
+         promoting/demoting 16 layers per move is its own source of jank. */
+      will-change: transform;
+    }
+
+    .tile-face {
+      position: absolute;
+      inset: 0;
       display: flex; align-items: center; justify-content: center;
+      border-radius: var(--_radius-sm);
       font-weight: 650;
       font-variant-numeric: tabular-nums;
       letter-spacing: -0.01em;
       font-size: clamp(18px, 4vw, 38px);
-      z-index: 2;
+      background: var(--_panel-2);
+      color: var(--_ink);
     }
 
     /* ── Overlay ────────────────────────────────────────────────────────── */
@@ -216,60 +231,48 @@
        expressed as --dx/--dy) and animates back to translate(0, 0), which is
        the tile's natural position.
 
-       Timeline per move (SLIDE_MS = 65):
-         0 ────── 65 ─────── 130
-         [ slide ][ pop      ]
-              [ appear ]  (starts at 40ms)
-       The easing is easeOutQuint: nearly all the distance is covered in the
-       first third of the slide, so it reads as instant with a soft landing.
-       Input unlocks at 65ms — the pop is cosmetic and does not gate the
-       next move.
+       Timeline per move:
+         0 ────────────── 90        slide
+         0 ──────────────── 130     pop   (merged tiles)
+              45 ─────────── 155    appear (spawned tile)
+         0 ─── 62                   input locked
+
+       easeOutCubic, not something more aggressive: at 90ms a slide only gets
+       about six frames, and a heavily front-loaded curve spends most of the
+       distance on the first one, which reads as a stutter rather than motion.
+
+       Input unlocks at 62ms, before the slide formally ends. On a decelerating
+       curve the tile is ~97% of the way there by then, so an interrupting move
+       starts from a position that is visually already correct.
     ────────────────────────────────────────────────────────────────────── */
     @keyframes tile-slide {
       from { transform: translate(var(--dx), var(--dy)); }
       to   { transform: translate(0, 0); }
     }
-
-    /* Slide and pop in one animation: two animations on the same element
-       cannot both drive `transform`. 50% == 65ms of the 130ms total. */
-    @keyframes tile-merge {
-      0%   { transform: translate(var(--dx), var(--dy)) scale(1); }
-      50%  { transform: translate(0, 0) scale(1); }
-      78%  { transform: translate(0, 0) scale(1.15); }
-      100% { transform: translate(0, 0) scale(1); }
+    @keyframes face-pop {
+      0%   { transform: scale(1); }
+      45%  { transform: scale(1.16); }
+      100% { transform: scale(1); }
     }
-
-    @keyframes tile-appear {
-      from { transform: scale(0.35); opacity: 0; }
-      60%  { transform: scale(1.06); opacity: 1; }
+    @keyframes face-appear {
+      from { transform: scale(0.4);  opacity: 0; }
+      60%  { transform: scale(1.05); opacity: 1; }
       to   { transform: scale(1);    opacity: 1; }
     }
 
-    /* Plain slide (no merge) */
-    .tile.sliding {
-      animation: tile-slide 65ms var(--_ease-snap) both;
-    }
+    /* Any tile that changed cell slides — merging tiles included. */
+    .tile.sliding { animation: tile-slide 90ms var(--_ease-out) both; }
 
-    /* Slides then pops with new value — sits on top of merge-away */
-    .tile.merging {
-      animation: tile-merge 130ms var(--_ease-snap) both;
-      z-index: 4;
-    }
+    /* These two are purely stacking order: the surviving tile of a merge sits
+       above the one sliding in underneath it to be absorbed. */
+    .tile.merging    { z-index: 4; }
+    .tile.merge-away { z-index: 3; pointer-events: none; }
 
-    /* Slides to destination then hides under the merging tile */
-    .tile.merge-away {
-      animation: tile-slide 65ms var(--_ease-snap) both;
-      z-index: 3;
-      pointer-events: none;
-    }
-
-    /* Appears just before the slides land, so the board settles as one */
-    .tile.new {
-      animation: tile-appear 90ms 40ms var(--_ease-snap) both;
-    }
+    .tile-face.pop    { animation: face-pop 130ms var(--_ease-out) both; }
+    .tile-face.appear { animation: face-appear 110ms 45ms var(--_ease-out) both; }
 
     @media (prefers-reduced-motion: reduce) {
-      .tile.sliding, .tile.merging, .tile.merge-away, .tile.new {
+      .tile.sliding, .tile-face.pop, .tile-face.appear {
         animation-duration: 1ms;
         animation-delay: 0ms;
       }
@@ -282,8 +285,6 @@
        light and dark mode. Text flips to --accent-ink once the tile is
        bright enough to need dark type.
     ────────────────────────────────────────────────────────────────────── */
-    .tile { background: var(--_panel-2); color: var(--_ink); }
-
     .t2    { background: color-mix(in oklab, var(--_accent) 10%, var(--_panel-2)); }
     .t4    { background: color-mix(in oklab, var(--_accent) 20%, var(--_panel-2)); }
     .t8    { background: color-mix(in oklab, var(--_accent) 32%, var(--_panel-2)); }
@@ -373,7 +374,7 @@
   const tileEls = new Map(); // id → DOM element
 
   function makeTile(value, row, col) {
-    return { id: nextId++, value, row, col, isNew: false };
+    return { id: nextId++, value, row, col };
   }
 
   function cellMap() {
@@ -424,7 +425,7 @@
   }
 
   // ── Spawn ──────────────────────────────────────────────────────────────────
-  function spawnRandom(isNew) {
+  function spawnRandom() {
     const map = cellMap();
     const empty = [];
     for (let r = 0; r < 4; r++)
@@ -432,22 +433,21 @@
         if (!map[r][c]) empty.push([r, c]);
     if (!empty.length) return;
     const [r, c] = empty[Math.floor(Math.random() * empty.length)];
-    const t = makeTile(Math.random() < 0.9 ? 2 : 4, r, c);
-    t.isNew = isNew;
-    tiles.push(t);
+    tiles.push(makeTile(Math.random() < 0.9 ? 2 : 4, r, c));
   }
 
   // ── Move ───────────────────────────────────────────────────────────────────
   // Animation timeline (ms):
-  //   0 ──────── 65 ─────── 130
-  //   [ slide  ] [ pop      ]
+  //   0 ────────────── 90    slide
+  //   0 ──────────────── 130  pop
+  //        45 ─────────── 155 appear
+  //   0 ─── 62                input locked
   //
-  // Input unlocks when the slide lands, not when the whole animation ends —
-  // the pop and the new-tile appear are cosmetic and keep running while the
-  // next move is already being accepted. A key pressed inside that 65ms
-  // window is buffered rather than dropped.
-  const SLIDE_MS  = 65;  // slide duration — also the input lock
-  const SETTLE_MS = 140; // pop + appear have finished by here
+  // Input unlocks at 62ms, well before the animations end — they are cosmetic
+  // and keep running while the next move is already being accepted. A key
+  // pressed inside that window is buffered rather than dropped.
+  const LOCK_MS   = 62;  // input lock — shorter than the 90ms slide on purpose
+  const SETTLE_MS = 170; // every animation has finished by here
 
   let unlockTimer = null;
   let settleTimer = null;
@@ -455,26 +455,24 @@
 
   // Strips animation classes so the next move starts clean. Idempotent, so a
   // move that interrupts the previous one can call it early.
-  function settle() {
+  //
+  // `replayIds` are the tiles whose face is about to pop again — only those
+  // get their face effect cleared. Every other face is left alone to finish,
+  // which is the whole point of keeping scale off the sliding element.
+  function settle(replayIds) {
     if (settleTimer !== null) { clearTimeout(settleTimer); settleTimer = null; }
     for (const t of tiles) {
-      t.isNew = false;
       const el = tileEls.get(t.id);
-      if (el) el.className = `tile ${tileClass(t.value)}`;
+      if (!el) continue;
+      el.className = 'tile';
+      if (replayIds && replayIds.has(t.id)) {
+        el.firstElementChild.classList.remove('pop', 'appear');
+      }
     }
   }
 
   function move(dir) {
     if (animating) { bufferedDir = dir; return; }
-
-    // Finish the previous move's cosmetics before starting this one. The flush
-    // is essential: settle() and syncDOM() run in the same task, so without a
-    // style recalculation in between, the browser only ever sees the final
-    // computed style. `animation-name` would go tile-slide -> tile-slide, look
-    // unchanged, and the animation would NOT restart — the tile would jump
-    // straight to its new cell. Reading a layout property forces the flush.
-    settle();
-    void boardEl.offsetHeight;
 
     // 1. Snapshot positions before any changes
     const oldPos = new Map(tiles.map(t => [t.id, { row: t.row, col: t.col }]));
@@ -507,15 +505,24 @@
     if (score > best) { best = score; saveBest(best); }
 
     // 4. Spawn new tile (added to `tiles` now, DOM element created in syncDOM)
-    spawnRandom(true);
+    spawnRandom();
 
-    // 5. Single DOM update — all animation classes applied in one pass
+    // 5. Clear the previous move's classes, then force a style recalculation.
+    //    The flush is essential: settle() and syncDOM() run in the same task,
+    //    so without it the browser only ever sees the final computed style.
+    //    `animation-name` would go tile-slide -> tile-slide, look unchanged,
+    //    and the animation would NOT restart — the tile would jump straight to
+    //    its new cell. Reading a layout property forces the recalculation.
+    settle(mergeIntoIds);
+    void boardEl.offsetHeight;
+
+    // 6. Single DOM update — all animation classes applied in one pass
     animating = true;
     syncDOM(oldPos, removeIds, mergeIntoIds);
     updateScores();
 
-    // 6. Slide has landed: retire the merged-away tiles, unlock input, and
-    //    play whatever key arrived mid-slide.
+    // 7. Slide has all but landed: retire the merged-away tiles, unlock input,
+    //    and play whatever key arrived mid-slide.
     unlockTimer = setTimeout(() => {
       unlockTimer = null;
       for (const id of removeIds) { tileEls.get(id)?.remove(); tileEls.delete(id); }
@@ -525,57 +532,65 @@
       checkState();
 
       if (bufferedDir) { const d = bufferedDir; bufferedDir = null; move(d); }
-    }, SLIDE_MS);
+    }, LOCK_MS);
 
-    // 7. Cosmetics done — clear animation classes (unless a move beats us to it)
+    // 8. Cosmetics done — clear animation classes (unless a move beats us to it)
     settleTimer = setTimeout(settle, SETTLE_MS);
   }
 
   // ── DOM sync (called once per move) ───────────────────────────────────────
   function tileClass(v) { return v > 2048 ? 'tsuper' : 't' + v; }
 
+  function makeTileEl(tile) {
+    const el = document.createElement('div');
+    el.className = 'tile';
+    const face = document.createElement('div');
+    face.className = `tile-face ${tileClass(tile.value)}`;
+    face.textContent = tile.value;
+    el.appendChild(face);
+    return el;
+  }
+
   function syncDOM(oldPos, removeIds, mergeIntoIds) {
     for (const tile of tiles) {
-      const old = oldPos.get(tile.id);
       let el = tileEls.get(tile.id);
 
       if (!el) {
-        // Newly spawned tile — placed at final position, appears after slides
-        el = document.createElement('div');
+        // Newly spawned tile — placed at final position, fades in after the slides
+        el = makeTileEl(tile);
         el.style.setProperty('--row', tile.row);
         el.style.setProperty('--col', tile.col);
-        el.className = `tile ${tileClass(tile.value)} new`;
-        el.textContent = tile.value;
+        el.firstElementChild.classList.add('appear');
         boardEl.appendChild(el);
         tileEls.set(tile.id, el);
         continue;
       }
 
-      // Set destination (--row/--col are the tile's natural position)
+      const old  = oldPos.get(tile.id);
+      const face = el.firstElementChild;
+
+      // Destination (--row/--col are the tile's natural position)
       el.style.setProperty('--row', tile.row);
       el.style.setProperty('--col', tile.col);
 
       const isAway = removeIds.has(tile.id);
       const isInto = mergeIntoIds.has(tile.id);
-      const moved  = old.row !== tile.row || old.col !== tile.col;
+      const moved  = old && (old.row !== tile.row || old.col !== tile.col);
 
-      if (isAway) {
-        // Slides to merge destination, then disappears under the merging tile
+      let cls = 'tile';
+      if (moved) {
         el.style.setProperty('--from-row', old.row);
         el.style.setProperty('--from-col', old.col);
-        el.className = `tile ${tileClass(tile.value)} merge-away`;
-      } else if (isInto) {
-        // Slides (if it moved) then pops — shows new value throughout
-        el.textContent = tile.value;
-        el.style.setProperty('--from-row', moved ? old.row : tile.row);
-        el.style.setProperty('--from-col', moved ? old.col : tile.col);
-        el.className = `tile ${tileClass(tile.value)} merging`;
-      } else if (moved) {
-        el.style.setProperty('--from-row', old.row);
-        el.style.setProperty('--from-col', old.col);
-        el.className = `tile ${tileClass(tile.value)} sliding`;
-      } else {
-        el.className = `tile ${tileClass(tile.value)}`;
+        cls += ' sliding';
+      }
+      if (isAway)      cls += ' merge-away';  // hides under the tile it merges into
+      else if (isInto) cls += ' merging';     // sits on top, shows the new value
+      el.className = cls;
+
+      if (isInto) {
+        face.className = `tile-face ${tileClass(tile.value)}`;
+        face.textContent = tile.value;
+        face.classList.add('pop');
       }
     }
   }
@@ -647,12 +662,19 @@
       }
     boardEl.appendChild(cells);
 
-    spawnRandom(false);
-    spawnRandom(false);
+    spawnRandom();
+    spawnRandom();
     syncDOM(new Map(), new Set(), new Set()); // no animations on init
     updateScores();
     hideOverlay();
   }
+
+  // A face effect left to run to completion clears its own class, so it never
+  // blocks a later restart. Delegated — animationend bubbles.
+  boardEl.addEventListener('animationend', e => {
+    const t = e.target;
+    if (t.classList && t.classList.contains('tile-face')) t.classList.remove('pop', 'appear');
+  });
 
   // ── Input: keyboard ────────────────────────────────────────────────────────
   const keyMap = { ArrowLeft:'left', ArrowRight:'right', ArrowUp:'up', ArrowDown:'down' };
