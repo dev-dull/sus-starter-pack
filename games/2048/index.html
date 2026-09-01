@@ -233,9 +233,9 @@
 
        Timeline per move:
          0 ────────────── 90        slide
-         0 ──────────────── 130     pop   (merged tiles)
+              45 ────────── 145     pop    (merged tiles, peaks at 90)
               45 ─────────── 155    appear (spawned tile)
-         0 ─── 62                   input locked
+         0 ─── 62                   input locked, absorbed tiles removed
 
        easeOutCubic, not something more aggressive: at 90ms a slide only gets
        about six frames, and a heavily front-loaded curve spends most of the
@@ -266,9 +266,19 @@
     /* These two are purely stacking order: the surviving tile of a merge sits
        above the one sliding in underneath it to be absorbed. */
     .tile.merging    { z-index: 4; }
-    .tile.merge-away { z-index: 3; pointer-events: none; }
+    .tile.merge-away {
+      z-index: 3;
+      pointer-events: none;
+      /* Must finish inside the input lock (LOCK_MS in the script), because
+         that is when it gets pulled from the DOM. On the full 90ms slide it
+         would still be a few pixels short at removal time, and that sliver
+         shows past the tile it is merging into. */
+      animation-duration: 62ms;
+    }
 
-    .tile-face.pop    { animation: face-pop 130ms var(--_ease-out) both; }
+    /* Delayed so the pop peaks at 90ms — exactly as the slide lands, which
+       reads as impact rather than a tile wobbling in mid-flight. */
+    .tile-face.pop    { animation: face-pop 100ms 45ms var(--_ease-out) both; }
     .tile-face.appear { animation: face-appear 110ms 45ms var(--_ease-out) both; }
 
     @media (prefers-reduced-motion: reduce) {
@@ -439,7 +449,7 @@
   // ── Move ───────────────────────────────────────────────────────────────────
   // Animation timeline (ms):
   //   0 ────────────── 90    slide
-  //   0 ──────────────── 130  pop
+  //        45 ────────── 145  pop (peaks at 90, as the slide lands)
   //        45 ─────────── 155 appear
   //   0 ─── 62                input locked
   //
@@ -535,7 +545,7 @@
     }, LOCK_MS);
 
     // 8. Cosmetics done — clear animation classes (unless a move beats us to it)
-    settleTimer = setTimeout(settle, SETTLE_MS);
+    settleTimer = setTimeout(() => settle(), SETTLE_MS);
   }
 
   // ── DOM sync (called once per move) ───────────────────────────────────────
