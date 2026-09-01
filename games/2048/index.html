@@ -445,6 +445,7 @@
   const SLIDE_MS  = 70;  // slide duration — also the input lock
   const SETTLE_MS = 180; // pop + appear have finished by here
 
+  let unlockTimer = null;
   let settleTimer = null;
   let bufferedDir = null;
 
@@ -503,7 +504,8 @@
 
     // 6. Slide has landed: retire the merged-away tiles, unlock input, and
     //    play whatever key arrived mid-slide.
-    setTimeout(() => {
+    unlockTimer = setTimeout(() => {
+      unlockTimer = null;
       for (const id of removeIds) { tileEls.get(id)?.remove(); tileEls.delete(id); }
       tiles = tiles.filter(t => !removeIds.has(t.id));
 
@@ -618,6 +620,7 @@
     animating   = false;
     wonShown    = false;
     bufferedDir = null;
+    if (unlockTimer !== null) { clearTimeout(unlockTimer); unlockTimer = null; }
     if (settleTimer !== null) { clearTimeout(settleTimer); settleTimer = null; }
 
     boardEl.querySelectorAll('.bg-cell').forEach(e => e.remove());
