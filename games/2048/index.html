@@ -171,6 +171,10 @@
     }
 
     .tile {
+      /* Slide offset, in tile-widths: one grid step = own width + the 12px gap.
+         Used by the keyframes below so motion is a transform, never a reflow. */
+      --dx: calc((var(--from-col, var(--col, 0)) - var(--col, 0)) * (100% + 12px));
+      --dy: calc((var(--from-row, var(--row, 0)) - var(--row, 0)) * (100% + 12px));
       display: flex; align-items: center; justify-content: center;
       font-weight: 650;
       font-variant-numeric: tabular-nums;
@@ -183,15 +187,17 @@
     .overlay {
       position: absolute; inset: 0;
       background: color-mix(in srgb, var(--_panel) 82%, transparent);
-      -webkit-backdrop-filter: blur(3px);
-      backdrop-filter: blur(3px);
       border-radius: var(--_radius);
       display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 16px;
       z-index: 20; opacity: 0; pointer-events: none;
       transition: opacity 0.3s;
     }
-    .overlay.visible { opacity: 1; pointer-events: all; }
+    .overlay.visible {
+      opacity: 1; pointer-events: all;
+      -webkit-backdrop-filter: blur(3px);
+      backdrop-filter: blur(3px);
+    }
     .overlay-msg {
       font-size: clamp(28px, 7vw, 40px);
       font-weight: 650;
@@ -203,52 +209,59 @@
        All motion is handled by CSS animations, not transitions.
        Every move triggers a single syncDOM() call; CSS sequences the rest.
 
-       Slide keyframe: animates LEFT/TOP from --from-col/--from-row to the
-       tile's natural position (--col/--row). The "to" state is implicit —
-       it's the element's own computed style once the animation ends.
+       Tiles are laid out with left/top, but they MOVE with transform only,
+       so a slide is composited rather than re-running layout every frame.
+       Each keyframe starts at the tile's previous cell (--from-row/--from-col
+       expressed as --dx/--dy) and animates back to translate(0, 0), which is
+       the tile's natural position.
 
-       Timeline per move (SLIDE_MS = 80):
-         0 ─────── SLIDE_MS ──── SLIDE_MS+POP_MS
-         [  slide  ][  pop/appear  ]
+       Timeline per move (SLIDE_MS = 70):
+         0 ─────── 70 ──────── 170
+         [ slide ][ pop/appear ]
+       Input unlocks at 70ms — the pop is cosmetic and does not gate the
+       next move.
     ────────────────────────────────────────────────────────────────────── */
     @keyframes tile-slide {
-      from {
-        left: calc(12px + var(--from-col) * (100% - 12px) / 4);
-        top:  calc(12px + var(--from-row) * (100% - 12px) / 4);
-      }
+      from { transform: translate(var(--dx), var(--dy)); }
+      to   { transform: translate(0, 0); }
     }
-    @keyframes tile-pop {
-      0%   { transform: scale(1); }
-      50%  { transform: scale(1.2); }
-      100% { transform: scale(1); }
+
+    /* Slide and pop in one animation: two animations on the same element
+       cannot both drive `transform`. 41% == 70ms of the 170ms total. */
+    @keyframes tile-merge {
+      0%   { transform: translate(var(--dx), var(--dy)) scale(1); }
+      41%  { transform: translate(0, 0) scale(1); }
+      70%  { transform: translate(0, 0) scale(1.18); }
+      100% { transform: translate(0, 0) scale(1); }
     }
+
     @keyframes tile-appear {
-      from { transform: scale(0); }
-      80%  { transform: scale(1.12); }
-      to   { transform: scale(1); }
+      from { transform: scale(0.2); opacity: 0; }
+      70%  { transform: scale(1.1);  opacity: 1; }
+      to   { transform: scale(1);    opacity: 1; }
     }
 
     /* Plain slide (no merge) */
     .tile.sliding {
-      animation: tile-slide 80ms ease both;
+      animation: tile-slide 70ms ease-out both;
     }
 
     /* Slides then pops with new value — sits on top of merge-away */
     .tile.merging {
-      animation: tile-slide 80ms ease both, tile-pop 100ms 80ms ease both;
+      animation: tile-merge 170ms ease-out both;
       z-index: 4;
     }
 
     /* Slides to destination then hides under the merging tile */
     .tile.merge-away {
-      animation: tile-slide 80ms ease both;
+      animation: tile-slide 70ms ease-out both;
       z-index: 3;
       pointer-events: none;
     }
 
     /* Appears after slides complete */
     .tile.new {
-      animation: tile-appear 100ms 80ms ease both;
+      animation: tile-appear 100ms 70ms ease-out both;
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -338,6 +351,14 @@
     return m ? decodeURIComponent(m[1]) : null;
   }
 
+  // ── Cached DOM refs ────────────────────────────────────────────────────────
+  // Looked up once at load instead of on every move.
+  const boardEl      = document.getElementById('board');
+  const scoreEl      = document.getElementById('score');
+  const bestEl       = document.getElementById('best');
+  const overlayEl    = document.getElementById('overlay');
+  const overlayMsgEl = document.getElementById('overlayMsg');
+
   // ── State ──────────────────────────────────────────────────────────────────
   let tiles = [];
   let nextId = 0;
@@ -414,14 +435,33 @@
 
   // ── Move ───────────────────────────────────────────────────────────────────
   // Animation timeline (ms):
-  //   0 ──────── 80 ──────── 180
+  //   0 ──────── 70 ──────── 170
   //   [ slide  ] [ pop/appear ]
-  const SLIDE_MS = 80;
-  const POST_MS  = 100; // pop + appear duration
-  const TOTAL_MS = SLIDE_MS + POST_MS + 20; // +buffer
+  //
+  // Input unlocks when the slide lands, not when the whole animation ends —
+  // the pop and the new-tile appear are cosmetic and keep running while the
+  // next move is already being accepted. A key pressed inside that 70ms
+  // window is buffered rather than dropped.
+  const SLIDE_MS  = 70;  // slide duration — also the input lock
+  const SETTLE_MS = 180; // pop + appear have finished by here
+
+  let settleTimer = null;
+  let bufferedDir = null;
+
+  // Strips animation classes so the next move starts clean. Idempotent, so a
+  // move that interrupts the previous one can call it early.
+  function settle() {
+    if (settleTimer !== null) { clearTimeout(settleTimer); settleTimer = null; }
+    for (const t of tiles) {
+      t.isNew = false;
+      const el = tileEls.get(t.id);
+      if (el) el.className = `tile ${tileClass(t.value)}`;
+    }
+  }
 
   function move(dir) {
-    if (animating) return;
+    if (animating) { bufferedDir = dir; return; }
+    settle(); // finish the previous move's cosmetics before starting this one
 
     // 1. Snapshot positions before any changes
     const oldPos = new Map(tiles.map(t => [t.id, { row: t.row, col: t.col }]));
@@ -461,30 +501,26 @@
     syncDOM(oldPos, removeIds, mergeIntoIds);
     updateScores();
 
-    // 6. Cleanup after all animations finish
+    // 6. Slide has landed: retire the merged-away tiles, unlock input, and
+    //    play whatever key arrived mid-slide.
     setTimeout(() => {
-      // Remove merge-away tiles from DOM and state
       for (const id of removeIds) { tileEls.get(id)?.remove(); tileEls.delete(id); }
       tiles = tiles.filter(t => !removeIds.has(t.id));
 
-      // Clear animation classes so next move starts clean
-      for (const t of tiles) {
-        t.isNew = false;
-        const el = tileEls.get(t.id);
-        if (el) el.className = `tile ${tileClass(t.value)}`;
-      }
-
       animating = false;
       checkState();
-    }, TOTAL_MS);
+
+      if (bufferedDir) { const d = bufferedDir; bufferedDir = null; move(d); }
+    }, SLIDE_MS);
+
+    // 7. Cosmetics done — clear animation classes (unless a move beats us to it)
+    settleTimer = setTimeout(settle, SETTLE_MS);
   }
 
   // ── DOM sync (called once per move) ───────────────────────────────────────
   function tileClass(v) { return v > 2048 ? 'tsuper' : 't' + v; }
 
   function syncDOM(oldPos, removeIds, mergeIntoIds) {
-    const board = document.getElementById('board');
-
     for (const tile of tiles) {
       const old = oldPos.get(tile.id);
       let el = tileEls.get(tile.id);
@@ -496,7 +532,7 @@
         el.style.setProperty('--col', tile.col);
         el.className = `tile ${tileClass(tile.value)} new`;
         el.textContent = tile.value;
-        board.appendChild(el);
+        boardEl.appendChild(el);
         tileEls.set(tile.id, el);
         continue;
       }
@@ -531,8 +567,8 @@
   }
 
   function updateScores() {
-    document.getElementById('score').textContent = score;
-    document.getElementById('best').textContent  = best;
+    scoreEl.textContent = score;
+    bestEl.textContent  = best;
   }
 
   // ── Game state ─────────────────────────────────────────────────────────────
@@ -542,23 +578,30 @@
       showOverlay('You win!');
       return;
     }
+    // A move exists if any cell is empty, or any neighbour pair matches.
+    // The right/below neighbour can itself be empty, so both need a guard —
+    // without one this threw on nearly every move and game over was never
+    // reached, because the exception aborted the scan.
     const map = cellMap();
     for (let r = 0; r < 4; r++)
       for (let c = 0; c < 4; c++) {
-        if (!map[r][c]) return;
-        if (c + 1 < 4 && map[r][c].value === map[r][c + 1].value) return;
-        if (r + 1 < 4 && map[r][c].value === map[r + 1][c].value) return;
+        const t = map[r][c];
+        if (!t) return;
+        const right = c + 1 < 4 ? map[r][c + 1] : null;
+        const below = r + 1 < 4 ? map[r + 1][c] : null;
+        if (right && right.value === t.value) return;
+        if (below && below.value === t.value) return;
       }
     showOverlay('Game over!');
   }
 
   // ── Overlay ────────────────────────────────────────────────────────────────
   function showOverlay(msg) {
-    document.getElementById('overlayMsg').textContent = msg;
-    document.getElementById('overlay').classList.add('visible');
+    overlayMsgEl.textContent = msg;
+    overlayEl.classList.add('visible');
   }
   function hideOverlay() {
-    document.getElementById('overlay').classList.remove('visible');
+    overlayEl.classList.remove('visible');
   }
 
   // ── Score persistence ──────────────────────────────────────────────────────
@@ -574,17 +617,20 @@
     best        = loadBest();
     animating   = false;
     wonShown    = false;
+    bufferedDir = null;
+    if (settleTimer !== null) { clearTimeout(settleTimer); settleTimer = null; }
 
-    const board = document.getElementById('board');
-    board.querySelectorAll('.bg-cell').forEach(e => e.remove());
+    boardEl.querySelectorAll('.bg-cell').forEach(e => e.remove());
+    const cells = document.createDocumentFragment();
     for (let r = 0; r < 4; r++)
       for (let c = 0; c < 4; c++) {
         const cell = document.createElement('div');
         cell.className = 'bg-cell';
         cell.style.setProperty('--row', r);
         cell.style.setProperty('--col', c);
-        board.appendChild(cell);
+        cells.appendChild(cell);
       }
+    boardEl.appendChild(cells);
 
     spawnRandom(false);
     spawnRandom(false);
@@ -599,28 +645,36 @@
     const dir = keyMap[e.key];
     if (!dir) return;
     e.preventDefault();
-    if (e.repeat) return;
-    move(dir);
+    move(dir); // auto-repeat is allowed; the slide lock paces it
   });
 
   // ── Input: touch / swipe ───────────────────────────────────────────────────
+  const SWIPE_MIN = 18; // px before a drag counts as a swipe
   let touchStart = null;
-  const boardEl  = document.getElementById('board');
+
+  // Resolves the swipe the moment it clears the threshold, so the board reacts
+  // mid-drag instead of waiting for the finger to lift.
+  function trySwipe(t) {
+    if (!touchStart) return;
+    const dx = t.clientX - touchStart.x;
+    const dy = t.clientY - touchStart.y;
+    if (Math.abs(dx) < SWIPE_MIN && Math.abs(dy) < SWIPE_MIN) return;
+    touchStart = null;
+    if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 'right' : 'left');
+    else                             move(dy > 0 ? 'down'  : 'up');
+  }
 
   boardEl.addEventListener('touchstart', e => {
     const t = e.touches[0];
     touchStart = { x: t.clientX, y: t.clientY };
   }, { passive: true });
 
+  boardEl.addEventListener('touchmove', e => trySwipe(e.touches[0]), { passive: true });
+
+  // Fallback for a flick that ends before any touchmove is delivered.
   boardEl.addEventListener('touchend', e => {
-    if (!touchStart) return;
-    const t  = e.changedTouches[0];
-    const dx = t.clientX - touchStart.x;
-    const dy = t.clientY - touchStart.y;
+    trySwipe(e.changedTouches[0]);
     touchStart = null;
-    if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return;
-    if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 'right' : 'left');
-    else                              move(dy > 0 ? 'down'  : 'up');
   }, { passive: true });
 
   // ── Buttons ────────────────────────────────────────────────────────────────
