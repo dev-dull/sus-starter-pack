@@ -197,6 +197,10 @@
       font-size: clamp(18px, 4vw, 38px);
       background: var(--_panel-2);
       color: var(--_ink);
+      /* Hairline edge. The classic palette was designed against a brown board;
+         on the light theme's pale board the 2 and 4 tiles would otherwise wash
+         out. Invisible on the saturated tiles. */
+      border: 1px solid rgba(0, 0, 0, 0.06);
     }
 
     /* ── Overlay ────────────────────────────────────────────────────────── */
@@ -301,36 +305,33 @@
     }
 
     /* ── Tile ramp ──────────────────────────────────────────────────────────
-       One accent, twelve steps: each tile mixes more of --accent into the
-       board surface, so the ladder reads as a single warm scale in both
-       light and dark mode. Text flips to --accent-ink once the tile is
-       bright enough to need dark type.
-    ────────────────────────────────────────────────────────────────────── */
-    .t2    { background: color-mix(in oklab, var(--_accent) 10%, var(--_panel-2)); }
-    .t4    { background: color-mix(in oklab, var(--_accent) 20%, var(--_panel-2)); }
-    .t8    { background: color-mix(in oklab, var(--_accent) 32%, var(--_panel-2)); }
-    .t16   { background: color-mix(in oklab, var(--_accent) 44%, var(--_panel-2)); }
-    .t32   { background: color-mix(in oklab, var(--_accent) 56%, var(--_panel-2)); }
+       The classic 2048 palette. The hue shift from cream through orange to
+       gold tracks progress at a glance in a way a single-accent ramp does not.
 
-    .t64   { background: color-mix(in oklab, var(--_accent) 70%, var(--_panel-2)); color: var(--_accent-ink); }
-    .t128  { background: color-mix(in oklab, var(--_accent) 82%, var(--_panel-2)); color: var(--_accent-ink); font-size: clamp(15px, 3.5vw, 34px); }
-    .t256  { background: color-mix(in oklab, var(--_accent) 90%, var(--_panel-2)); color: var(--_accent-ink); font-size: clamp(15px, 3.5vw, 34px); }
-    .t512  { background: color-mix(in oklab, var(--_accent) 96%, var(--_panel-2)); color: var(--_accent-ink); font-size: clamp(15px, 3.5vw, 34px); }
-    .t1024 { background: var(--_accent); color: var(--_accent-ink); font-size: clamp(13px, 3vw, 28px); }
+       This is the one place in the file with hardcoded colours, and it is safe
+       here because every tile sets its own background AND text colour — the
+       pair is self-contained, so it reads identically in light and dark mode.
+       Every other surface still comes from the theme tokens.
+    ────────────────────────────────────────────────────────────────────── */
+    .t2    { background: #eee4da; color: #776e65; }
+    .t4    { background: #ede0c8; color: #776e65; }
+    .t8    { background: #f2b179; color: #f9f6f2; }
+    .t16   { background: #f59563; color: #f9f6f2; }
+    .t32   { background: #f67c5f; color: #f9f6f2; }
+    .t64   { background: #f65e3b; color: #f9f6f2; }
+    .t128  { background: #edcf72; color: #f9f6f2; font-size: clamp(15px, 3.5vw, 34px); }
+    .t256  { background: #edcc61; color: #f9f6f2; font-size: clamp(15px, 3.5vw, 34px); }
+    .t512  { background: #edc850; color: #f9f6f2; font-size: clamp(15px, 3.5vw, 34px); }
+    .t1024 { background: #edc53f; color: #f9f6f2; font-size: clamp(13px, 3vw, 28px); }
 
     .t2048 {
-      background: var(--_accent);
-      color: var(--_accent-ink);
+      background: #edc22e; color: #f9f6f2;
       font-size: clamp(13px, 3vw, 28px);
-      box-shadow: 0 0 0 2px var(--_panel), 0 0 0 4px var(--_accent), 0 0 18px var(--_accent-weak);
+      box-shadow: 0 0 0 2px var(--_panel), 0 0 0 4px #edc22e, 0 0 18px rgba(237, 194, 46, 0.45);
     }
 
-    /* Past 2048 — inverted, so it stands apart from the accent ladder */
-    .tsuper {
-      background: var(--_ink);
-      color: var(--_panel);
-      font-size: clamp(11px, 2.5vw, 24px);
-    }
+    /* Past 2048 — the classic dark tile */
+    .tsuper { background: #3c3a32; color: #f9f6f2; font-size: clamp(11px, 2.5vw, 24px); }
 
     .hint { margin-top: 12px; font-size: 12px; color: var(--_ink-soft); text-align: center; }
   </style>
