@@ -232,16 +232,18 @@
        the tile's natural position.
 
        Timeline per move:
-         0 ────────────── 90        slide
-         0 ────────────── 90        pop    (merged tiles)
-           30 ──────────── 115      appear (spawned tile)
-         0 ─── 62                   input locked, absorbed tiles removed
+         0 ─────── 45          slide
+         0 ─────── 45          pop    (merged tiles)
+          15 ──────── 60       appear (spawned tile)
+         0 ── 31               input locked, absorbed tiles removed
 
-       easeOutCubic, not something more aggressive: at 90ms a slide only gets
-       about six frames, and a heavily front-loaded curve spends most of the
-       distance on the first one, which reads as a stutter rather than motion.
+       At 45ms a slide gets under three frames at 60Hz. Every duration below is
+       scaled from that one number — change the slide and the rest follow in
+       proportion. The slide runs linear for the reason given at the rule; the
+       scale effects keep easeOutCubic, which reaches its peak on frame one and
+       is what gives a merge its snap.
 
-       Input unlocks at 62ms, before the slide formally ends. On a decelerating
+       Input unlocks at 31ms, before the slide formally ends. On a decelerating
        curve the tile is ~97% of the way there by then, so an interrupting move
        starts from a position that is visually already correct.
     ────────────────────────────────────────────────────────────────────── */
@@ -260,8 +262,14 @@
       to   { transform: scale(1);    opacity: 1; }
     }
 
-    /* Any tile that changed cell slides — merging tiles included. */
-    .tile.sliding { animation: tile-slide 90ms var(--_ease-out) both; }
+    /* Any tile that changed cell slides — merging tiles included.
+       Linear, not eased: a 45ms slide only gets three frames at 60Hz, and an
+       ease-out spends 77% of the distance on the first one, then 21%, then 3%
+       — one leap and two nudges, which is what reads as a low frame rate.
+       Linear splits the same 45ms into 37/37/26, three even steps. Easing
+       needs frames to be perceptible, and at this duration there are none
+       to spare. */
+    .tile.sliding { animation: tile-slide 45ms linear both; }
 
     /* These two are purely stacking order: the surviving tile of a merge sits
        above the one sliding in underneath it to be absorbed. */
@@ -270,19 +278,19 @@
       z-index: 3;
       pointer-events: none;
       /* Must finish inside the input lock (LOCK_MS in the script), because
-         that is when it gets pulled from the DOM. On the full 90ms slide it
+         that is when it gets pulled from the DOM. On the full 45ms slide it
          would still be a few pixels short at removal time, and that sliver
          shows past the tile it is merging into. */
-      animation-duration: 62ms;
+      animation-duration: 31ms;
     }
 
     /* No delay: the pop runs alongside the slide and lands with it, so a merge
        reads the moment it happens instead of 45ms later. */
-    .tile-face.pop { animation: face-pop 90ms var(--_ease-out) both; }
+    .tile-face.pop { animation: face-pop 45ms var(--_ease-out) both; }
 
-    /* The only remaining wait in the game, and it is 2 frames: just enough
-       that a spawned tile does not compete with the slide for attention. */
-    .tile-face.appear { animation: face-appear 85ms 30ms var(--_ease-out) both; }
+    /* The only remaining wait in the game, and it is now about one frame:
+       just enough that a spawned tile does not compete with the slide. */
+    .tile-face.appear { animation: face-appear 45ms 15ms var(--_ease-out) both; }
 
     @media (prefers-reduced-motion: reduce) {
       .tile.sliding, .tile-face.pop, .tile-face.appear {
@@ -451,16 +459,16 @@
 
   // ── Move ───────────────────────────────────────────────────────────────────
   // Animation timeline (ms):
-  //   0 ────────────── 90    slide
-  //   0 ────────────── 90    pop
-  //     30 ──────────── 115  appear
-  //   0 ─── 62                input locked
+  //   0 ─────── 45   slide
+  //   0 ─────── 45   pop
+  //    15 ──────── 60 appear
+  //   0 ── 31         input locked
   //
   // Input unlocks at 62ms, well before the animations end — they are cosmetic
   // and keep running while the next move is already being accepted. A key
   // pressed inside that window is buffered rather than dropped.
-  const LOCK_MS   = 62;  // input lock — shorter than the 90ms slide on purpose
-  const SETTLE_MS = 130; // every animation has finished by here
+  const LOCK_MS   = 31;  // input lock — shorter than the 45ms slide on purpose
+  const SETTLE_MS =  70; // every animation has finished by here
 
   let unlockTimer = null;
   let settleTimer = null;
