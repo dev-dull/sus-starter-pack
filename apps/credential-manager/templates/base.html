@@ -5,254 +5,465 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Credential Manager</title>
   <style>
+    /* ==================================================================
+       Tokens — mirrored from the SUS shared design system
+       (theme.css, the platform's single source of truth). Inlined so the
+       app renders correctly inside the preview frame with no extra
+       requests. Keep in sync with the platform theme.
+       ================================================================== */
+    :root {
+      color-scheme: light;
+
+      --desktop-bg: radial-gradient(120% 120% at 15% 0%, #eef1e8 0%, #e3e8dd 45%, #d8ded1 100%);
+      --desktop-solid: #e3e8dd;
+
+      --chrome-bg: rgba(255, 255, 255, 0.72);
+      --chrome-solid: #ffffff;
+
+      --panel-bg: rgba(251, 250, 246, 0.82);
+      --panel-solid: #fbfaf6;
+      --panel-2: #f1efe8;
+
+      --ink: #2c2c2a;
+      --ink-soft: #6c6c66;
+      --line: rgba(30, 30, 20, 0.14);
+
+      --accent: #e08a3c;
+      --accent-ink: #ffffff;
+      --accent-weak: rgba(224, 138, 60, 0.14);
+
+      --danger: #d9584e;
+      --danger-ink: #ffffff;
+      --ok: #3f9d6b;
+
+      --shadow-win: 0 14px 40px rgba(40, 38, 24, 0.20), 0 2px 8px rgba(40, 38, 24, 0.10);
+      --shadow-pop: 0 8px 24px rgba(40, 38, 24, 0.22);
+      --shadow-card: 0 6px 20px rgba(40, 38, 24, 0.10);
+
+      --radius: 12px;
+      --radius-sm: 7px;
+
+      --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+      /* app-local, derived from the system */
+      --scrim: rgba(30, 28, 18, 0.38);
+    }
+
+    /* Dark — OS preference */
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --desktop-bg: radial-gradient(120% 120% at 15% 0%, #24271f 0%, #1d201a 50%, #171814 100%);
+        --desktop-solid: #1d201a;
+        --chrome-bg: rgba(32, 34, 30, 0.66);
+        --chrome-solid: #262825;
+        --panel-bg: rgba(36, 38, 34, 0.86);
+        --panel-solid: #262824;
+        --panel-2: #2f312c;
+        --ink: #ecebe4;
+        --ink-soft: #a4a49a;
+        --line: rgba(255, 255, 255, 0.14);
+        --accent: #e7a151;
+        --accent-ink: #201a12;
+        --accent-weak: rgba(231, 161, 81, 0.18);
+        --danger: #e0776d;
+        --danger-ink: #201a12;
+        --ok: #5cb98a;
+        --shadow-win: 0 16px 44px rgba(0, 0, 0, 0.55), 0 2px 10px rgba(0, 0, 0, 0.4);
+        --shadow-pop: 0 10px 28px rgba(0, 0, 0, 0.55);
+        --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.45);
+        --scrim: rgba(0, 0, 0, 0.55);
+      }
+    }
+
+    /* Dark — explicit toggle */
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --desktop-bg: radial-gradient(120% 120% at 15% 0%, #24271f 0%, #1d201a 50%, #171814 100%);
+      --desktop-solid: #1d201a;
+      --chrome-bg: rgba(32, 34, 30, 0.66);
+      --chrome-solid: #262825;
+      --panel-bg: rgba(36, 38, 34, 0.86);
+      --panel-solid: #262824;
+      --panel-2: #2f312c;
+      --ink: #ecebe4;
+      --ink-soft: #a4a49a;
+      --line: rgba(255, 255, 255, 0.14);
+      --accent: #e7a151;
+      --accent-ink: #201a12;
+      --accent-weak: rgba(231, 161, 81, 0.18);
+      --danger: #e0776d;
+      --danger-ink: #201a12;
+      --ok: #5cb98a;
+      --shadow-win: 0 16px 44px rgba(0, 0, 0, 0.55), 0 2px 10px rgba(0, 0, 0, 0.4);
+      --shadow-pop: 0 10px 28px rgba(0, 0, 0, 0.55);
+      --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.45);
+      --scrim: rgba(0, 0, 0, 0.55);
+    }
+
+    /* ==================================================================
+       Base
+       ================================================================== */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f5f5f7;
-      color: #1d1d1f;
+      font-family: var(--font-ui);
+      color: var(--ink);
+      background: var(--desktop-bg);
+      background-attachment: fixed;
+      line-height: 1.5;
       min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
     }
+    /* Framed inside a desktop window: blend into the window panel. */
+    .sus-embedded body { background: transparent; }
 
-    header {
-      background: #fff;
-      border-bottom: 1px solid #d2d2d7;
-      padding: 0 2rem;
-      height: 56px;
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.15rem; }
+    h3 { font-size: 1rem; }
+
+    .muted { color: var(--ink-soft); }
+    code, kbd, samp { font-family: var(--font-mono); }
+
+    ::selection { background: var(--accent); color: var(--accent-ink); }
+
+    /* ==================================================================
+       App chrome
+       ================================================================== */
+    .app-bar {
       display: flex;
       align-items: center;
       gap: 0.75rem;
+      height: 52px;
+      padding: 0 1.5rem;
+      background: var(--chrome-bg);
+      -webkit-backdrop-filter: saturate(1.4) blur(12px);
+      backdrop-filter: saturate(1.4) blur(12px);
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 50;
     }
-    header h1 { font-size: 1.1rem; font-weight: 600; }
-    header .namespace-badge {
-      font-size: 0.75rem;
-      background: #e8f0fe;
-      color: #1a56db;
-      padding: 0.2rem 0.6rem;
-      border-radius: 999px;
-      font-family: monospace;
-    }
+    .app-bar h1 { font-size: 1.05rem; font-weight: 600; }
 
-    main { max-width: 900px; margin: 2rem auto; padding: 0 1.5rem; }
-
-    .card {
-      background: #fff;
-      border: 1px solid #d2d2d7;
-      border-radius: 12px;
-      overflow: hidden;
+    .sus-page {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
     }
+    .sus-embedded .sus-page { max-width: none; padding: 1.25rem 1.5rem; }
+
+    /* ==================================================================
+       Panels / cards
+       ================================================================== */
+    .card, .panel {
+      background: var(--panel-solid);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-card);
+    }
+    .sus-embedded .card, .sus-embedded .panel { box-shadow: none; }
+
+    .card { overflow: hidden; }
+    .panel { padding: 1.25rem; }
 
     .card-header {
-      padding: 1.25rem 1.5rem;
-      border-bottom: 1px solid #f0f0f5;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--line);
     }
-    .card-header h2 { font-size: 0.95rem; font-weight: 600; }
+    .card-header h2 { font-size: 1rem; font-weight: 600; }
 
+    /* ==================================================================
+       Buttons
+       ================================================================== */
     .btn {
       display: inline-flex;
       align-items: center;
-      gap: 0.4rem;
-      padding: 0.45rem 1rem;
-      border-radius: 8px;
+      gap: .4rem;
+      padding: .5rem 1.1rem;
+      font: inherit;
+      font-weight: 600;
+      line-height: 1.1;
+      color: var(--ink);
+      background: var(--panel-solid);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: border-color .15s, filter .15s, background .15s;
+    }
+    .btn:hover { border-color: var(--accent); text-decoration: none; }
+    .btn:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+    .btn:disabled, .btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+    .btn--primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+    .btn--primary:hover { filter: brightness(1.05); border-color: transparent; }
+
+    .btn--danger { background: var(--danger); color: var(--danger-ink); border-color: transparent; }
+    .btn--danger:hover { filter: brightness(1.05); border-color: transparent; }
+
+    .btn--ghost { background: transparent; }
+
+    .btn--sm { padding: .3rem .8rem; font-size: .82rem; }
+
+    .icon-btn {
+      background: none;
       border: none;
       cursor: pointer;
-      font-size: 0.85rem;
-      font-weight: 500;
-      text-decoration: none;
-      transition: background 0.15s;
+      color: var(--ink-soft);
+      font-size: 1.25rem;
+      line-height: 1;
+      padding: 0 .25rem;
+      border-radius: var(--radius-sm);
+      transition: color .15s;
     }
-    .btn-primary   { background: #1a56db; color: #fff; }
-    .btn-primary:hover   { background: #1648c0; }
-    .btn-secondary { background: #f0f0f5; color: #1d1d1f; }
-    .btn-secondary:hover { background: #e0e0ea; }
-    .btn-danger    { background: #fff; color: #c0392b; border: 1px solid #e0c0be; }
-    .btn-danger:hover    { background: #fdf3f2; }
-    .btn-sm { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+    .icon-btn:hover { color: var(--ink); }
+    .icon-btn--danger:hover { color: var(--danger); }
 
-    .error-banner {
-      background: #fdf3f2;
-      border: 1px solid #f0b8b4;
-      color: #c0392b;
-      padding: 0.75rem 1rem;
-      border-radius: 8px;
+    /* ==================================================================
+       Forms
+       ================================================================== */
+    label { display: block; font-size: .9rem; font-weight: 600; margin-bottom: .35rem; color: var(--ink); }
+
+    input[type="text"], input[type="password"], input[type="search"],
+    input[type="email"], input[type="url"], input[type="number"],
+    textarea, select {
+      width: 100%;
+      padding: .55rem .75rem;
+      font: inherit;
+      color: var(--ink);
+      background: var(--panel-solid);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-weak);
+    }
+    input::placeholder, textarea::placeholder { color: var(--ink-soft); }
+
+    .field { margin-bottom: 1rem; }
+    .field .hint { font-size: .82rem; color: var(--ink-soft); margin-top: .3rem; }
+    .field label .optional { font-weight: 400; color: var(--ink-soft); }
+
+    /* ==================================================================
+       Badges + code
+       ================================================================== */
+    .badge {
+      display: inline-block;
+      padding: .15rem .55rem;
+      font-size: .75rem;
+      font-weight: 600;
+      border-radius: 999px;
+      background: var(--panel-2);
+      color: var(--ink-soft);
+    }
+    .badge--active { background: var(--accent); color: var(--accent-ink); }
+    .badge--ok { background: var(--ok); color: #fff; }
+    .badge--mono { font-family: var(--font-mono); font-weight: 500; }
+
+    pre, .code {
+      font-family: var(--font-mono);
+      font-size: .85rem;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: .75rem 1rem;
+      overflow-x: auto;
+    }
+    :not(pre) > code {
+      background: var(--panel-2);
+      border-radius: 4px;
+      padding: .1rem .35rem;
+      font-size: .85em;
+    }
+
+    /* ==================================================================
+       Notices
+       ================================================================== */
+    .notice {
+      padding: .75rem 1rem;
+      border-radius: var(--radius-sm);
+      font-size: .9rem;
       margin-bottom: 1.25rem;
-      font-size: 0.875rem;
+      border: 1px solid var(--line);
+      background: var(--panel-solid);
+    }
+    .notice--error {
+      border-color: var(--danger);
+      background: var(--panel-solid);
+      color: var(--danger);
+      font-weight: 600;
     }
 
-    /* Cred list */
+    /* ==================================================================
+       Credential list
+       ================================================================== */
     #cred-list { min-height: 60px; }
 
     .cred-row {
       display: flex;
       align-items: center;
-      padding: 0.9rem 1.5rem;
-      border-bottom: 1px solid #f0f0f5;
       gap: 1rem;
+      padding: .9rem 1.25rem;
+      border-bottom: 1px solid var(--line);
+      transition: background .15s;
     }
     .cred-row:last-child { border-bottom: none; }
+    .cred-row:hover { background: var(--accent-weak); }
 
     .cred-info { flex: 1; min-width: 0; }
-    .cred-name { font-weight: 500; font-size: 0.925rem; }
-    .cred-desc { font-size: 0.8rem; color: #6e6e73; margin-top: 0.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-    .cred-keys { display: flex; gap: 0.4rem; flex-wrap: wrap; flex: 1; }
-    .key-chip {
-      font-family: monospace;
-      font-size: 0.75rem;
-      background: #f5f5f7;
-      border: 1px solid #d2d2d7;
-      padding: 0.15rem 0.5rem;
-      border-radius: 5px;
-      color: #3a3a3c;
+    .cred-name { font-weight: 600; font-size: .95rem; }
+    .cred-desc {
+      font-size: .82rem;
+      color: var(--ink-soft);
+      margin-top: .1rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .cred-actions { display: flex; gap: 0.5rem; }
+    .cred-keys { display: flex; gap: .35rem; flex-wrap: wrap; flex: 1; }
+    .cred-actions { display: flex; gap: .5rem; }
 
     .empty-state {
       padding: 3rem 1.5rem;
       text-align: center;
-      color: #6e6e73;
-      font-size: 0.9rem;
+      color: var(--ink-soft);
+      font-size: .9rem;
     }
 
-    /* Drawer overlay */
+    /* ==================================================================
+       Drawer
+       ================================================================== */
     .drawer-overlay {
       display: none;
       position: fixed; inset: 0;
-      background: rgba(0,0,0,0.35);
+      background: var(--scrim);
       z-index: 100;
     }
-    .drawer-overlay.open { display: flex; align-items: flex-end; justify-content: flex-end; }
+    .drawer-overlay.open { display: flex; align-items: stretch; justify-content: flex-end; }
 
     .drawer {
-      background: #fff;
+      background: var(--panel-solid);
+      border-left: 1px solid var(--line);
       width: 480px;
       max-width: 100%;
       height: 100vh;
       overflow-y: auto;
-      box-shadow: -4px 0 24px rgba(0,0,0,0.12);
+      box-shadow: var(--shadow-win);
       padding: 1.5rem;
-      box-sizing: border-box;
       display: flex;
       flex-direction: column;
       gap: 1.25rem;
     }
     .drawer-header { display: flex; align-items: center; justify-content: space-between; }
-    .drawer-header h2 { font-size: 1rem; font-weight: 600; }
-    .close-btn { background: none; border: none; font-size: 1.25rem; cursor: pointer; color: #6e6e73; line-height: 1; }
+    .drawer-header h2 { font-size: 1.1rem; font-weight: 600; }
 
-    /* Form */
-    .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
-    .form-group label { font-size: 0.82rem; font-weight: 500; color: #3a3a3c; }
-    .form-group input, .form-group textarea {
-      padding: 0.55rem 0.75rem;
-      border: 1px solid #d2d2d7;
-      border-radius: 8px;
-      font-size: 0.875rem;
-      font-family: inherit;
-      outline: none;
-      transition: border-color 0.15s;
-    }
-    .form-group input:focus, .form-group textarea:focus { border-color: #1a56db; }
-    .form-group textarea { resize: vertical; min-height: 60px; }
+    .kv-rows { display: flex; flex-direction: column; gap: .5rem; }
+    .kv-row { display: flex; gap: .5rem; align-items: center; }
+    .kv-row input { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: .82rem; }
 
-    .kv-rows { display: flex; flex-direction: column; gap: 0.5rem; }
-    .kv-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-    .kv-row input { flex: 1; min-width: 80px; }
-    .kv-row input[name="keys"] { font-family: monospace; font-size: 0.8rem; }
-    .kv-row input[name="values"] { font-family: monospace; font-size: 0.8rem; }
-    .remove-kv { background: none; border: none; cursor: pointer; color: #c0392b; font-size: 1.1rem; padding: 0 0.25rem; }
-
-    .form-footer { display: flex; gap: 0.75rem; justify-content: flex-end; padding-top: 0.5rem; }
+    .form-footer { display: flex; gap: .75rem; justify-content: flex-end; padding-top: .5rem; }
 
     .htmx-indicator { display: none; }
     .htmx-request .htmx-indicator { display: inline; }
 
-    /* Toast */
-    #toast {
+    /* ==================================================================
+       Toast
+       ================================================================== */
+    .toast {
       position: fixed;
       bottom: 1.5rem; right: 1.5rem;
-      background: #1c7c4a;
+      padding: .75rem 1.25rem;
+      border-radius: var(--radius-sm);
+      font-size: .9rem;
+      font-weight: 600;
       color: #fff;
-      padding: 0.65rem 1.1rem;
-      border-radius: 8px;
-      font-size: 0.875rem;
-      font-weight: 500;
+      box-shadow: var(--shadow-pop);
+      z-index: 9999;
       opacity: 0;
       transform: translateY(8px);
-      transition: opacity 0.2s, transform 0.2s;
+      transition: opacity .2s, transform .2s;
       pointer-events: none;
-      z-index: 200;
     }
-    #toast.show { opacity: 1; transform: translateY(0); }
+    .toast--ok { background: var(--ok); }
+    .toast--error { background: var(--danger); }
+    .toast.show { opacity: 1; transform: translateY(0); }
   </style>
 </head>
 <body>
-  <header>
+  <header class="app-bar">
     <h1>Credential Manager</h1>
-    <span class="namespace-badge">{{ namespace }}</span>
+    <span class="badge badge--mono">{{ namespace }}</span>
   </header>
 
-  <main>
+  <main class="sus-page">
     {% block content %}{% endblock %}
   </main>
 
-  <div id="toast">Saved</div>
+  <div id="toast" class="toast toast--ok">Saved</div>
 
   <!-- Drawer for create/edit -->
   <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer(event)">
     <div class="drawer" id="drawer-panel">
       <div class="drawer-header">
         <h2 id="drawer-title">New credential</h2>
-        <button class="close-btn" onclick="closeDrawerForce()">×</button>
+        <button class="icon-btn" onclick="closeDrawerForce()" aria-label="Close">&times;</button>
       </div>
 
       <form action="" method="get" id="cred-form">
         <input type="hidden" name="action" id="form-action" value="create">
         <input type="hidden" name="secret_name" id="form-name" value="">
         <input type="hidden" name="pod_ip" id="form-pod-ip" value="">
-        <div style="display:flex;flex-direction:column;gap:1rem;">
 
-          <div class="form-group">
-            <label for="display_name">Name</label>
-            <input id="display_name" name="display_name" type="text"
-              placeholder="e.g. Stripe API Keys" required autocomplete="off" />
-          </div>
+        <div class="field">
+          <label for="display_name">Name</label>
+          <input id="display_name" name="display_name" type="text"
+            placeholder="e.g. Stripe API Keys" required autocomplete="off" />
+        </div>
 
-          <div class="form-group">
-            <label for="description">Description <span style="font-weight:400;color:#8e8e93;">(optional)</span></label>
-            <input id="description" name="description" type="text"
-              placeholder="What is this credential for?" autocomplete="off" />
-          </div>
+        <div class="field">
+          <label for="description">Description <span class="optional">(optional)</span></label>
+          <input id="description" name="description" type="text"
+            placeholder="What is this credential for?" autocomplete="off" />
+        </div>
 
-          <div class="form-group">
-            <label>Keys &amp; values</label>
-            <p id="edit-hint" style="display:none;font-size:0.78rem;color:#8e8e93;margin-bottom:0.4rem;">
-              Values are write-only. Enter a new value to update a key, or leave it blank to keep the existing value. Remove a row to delete that key.
-            </p>
-            <div class="kv-rows" id="kv-rows">
-              <div class="kv-row">
-                <input type="text" name="keys" placeholder="KEY_NAME" autocomplete="off" spellcheck="false" />
-                <input type="password" name="values" placeholder="value" autocomplete="off" spellcheck="false" />
-                <button type="button" class="remove-kv" onclick="this.closest('.kv-row').remove()">×</button>
-              </div>
-            </div>
-            <button type="button" class="btn btn-secondary btn-sm"
-              style="margin-top:0.5rem;align-self:flex-start;"
-              onclick="addKvRow(document.getElementById('kv-rows'))">+ Add key</button>
-          </div>
-
-          <p id="secret-name-hint" style="display:none;font-size:0.78rem;color:#6e6e73;background:#f5f5f7;padding:0.6rem 0.8rem;border-radius:6px;">
-            Secret name: <code id="secret-name-code" style="font-family:monospace;"></code>
+        <div class="field">
+          <label>Keys &amp; values</label>
+          <p id="edit-hint" class="hint" style="display:none;margin-bottom:.5rem;">
+            Values are write-only. Enter a new value to update a key, or leave it blank to keep the existing value. Remove a row to delete that key.
           </p>
-
-          <div class="form-footer">
-            <button type="button" class="btn btn-secondary" onclick="closeDrawerForce()">Cancel</button>
-            <button type="submit" class="btn btn-primary">Save</button>
+          <div class="kv-rows" id="kv-rows">
+            <div class="kv-row">
+              <input type="text" name="keys" placeholder="KEY_NAME" autocomplete="off" spellcheck="false" />
+              <input type="password" name="values" placeholder="value" autocomplete="off" spellcheck="false" />
+              <button type="button" class="icon-btn icon-btn--danger" onclick="this.closest('.kv-row').remove()" aria-label="Remove key">&times;</button>
+            </div>
           </div>
+          <button type="button" class="btn btn--ghost btn--sm"
+            style="margin-top:.6rem;"
+            onclick="addKvRow(document.getElementById('kv-rows'))">+ Add key</button>
+        </div>
+
+        <p id="secret-name-hint" class="code" style="display:none;font-size:.8rem;">
+          Secret name: <span id="secret-name-code"></span>
+        </p>
+
+        <div class="form-footer">
+          <button type="button" class="btn" onclick="closeDrawerForce()">Cancel</button>
+          <button type="submit" class="btn btn--primary">Save</button>
         </div>
       </form>
     </div>
@@ -276,7 +487,7 @@
       row.innerHTML = `
         <input type="text" name="keys" placeholder="KEY_NAME" autocomplete="off" spellcheck="false" />
         <input type="password" name="values" placeholder="value" autocomplete="off" spellcheck="false" />
-        <button type="button" class="remove-kv" onclick="this.closest('.kv-row').remove()">×</button>`;
+        <button type="button" class="icon-btn icon-btn--danger" onclick="this.closest('.kv-row').remove()" aria-label="Remove key">&times;</button>`;
       if (key !== undefined) row.querySelector('input[name="keys"]').value = key;
       if (value !== undefined) row.querySelector('input[name="values"]').value = value;
       container.appendChild(row);
@@ -286,7 +497,7 @@
     var _podIp = new URLSearchParams(window.location.search).get('pod_ip') || '';
 
     function deleteCred(name, displayName) {
-      if (!confirm('Delete \u201c' + displayName + '\u201d? This cannot be undone.')) return;
+      if (!confirm('Delete “' + displayName + '”? This cannot be undone.')) return;
       var params = new URLSearchParams({ action: 'delete', secret_name: name });
       if (_podIp) params.set('pod_ip', _podIp);
       window.location.href = '?' + params.toString();

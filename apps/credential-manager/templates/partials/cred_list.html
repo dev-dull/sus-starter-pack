@@ -6,21 +6,21 @@
       {% if cred.description %}
       <div class="cred-desc">{{ cred.description }}</div>
       {% else %}
-      <div class="cred-desc" style="font-family:monospace;">{{ cred.name }}</div>
+      <div class="cred-desc" style="font-family:var(--font-mono);">{{ cred.name }}</div>
       {% endif %}
     </div>
     <div class="cred-keys">
       {% for key in cred['keys'] %}
-      <span class="key-chip">{{ key }}</span>
+      <span class="badge badge--mono">{{ key }}</span>
       {% endfor %}
     </div>
     <div class="cred-actions">
       <button
-        class="btn btn-secondary btn-sm"
+        class="btn btn--sm"
         onclick="openEditDrawer({{ cred.name | tojson | forceescape }}, {{ cred.display_name | tojson | forceescape }}, {{ cred.description | tojson | forceescape }}, {{ cred['keys'] | tojson | forceescape }})"
       >Edit</button>
       <button
-        class="btn btn-danger btn-sm"
+        class="btn btn--danger btn--sm"
         onclick="deleteCred('{{ cred.name }}', {{ cred.display_name | tojson | forceescape }})"
       >Delete</button>
     </div>
